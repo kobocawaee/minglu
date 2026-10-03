@@ -1,0 +1,27 @@
+# 視覺助理（資服版）需要的套件
+# PyTorch 要裝顯示卡（CUDA）版，所以不寫在這裡，由 安裝.bat 另外安裝：
+#   pip install torch==2.14.1 torchvision==0.29.1 --index-url https://download.pytorch.org/whl/cu126
+# 版本是開發時實際測試過的組合
+
+# 模型
+transformers==5.18.0
+huggingface_hub==1.33.0
+accelerate==1.15.0
+bitsandbytes==0.50.2          # Gemma 4-bit 載入（8GB 顯示卡放得下）
+safetensors==0.8.0
+tokenizers==0.23.2
+ultralytics==8.4.171          # YOLOv8 物件偵測
+easyocr==1.7.2                # 讀字模式
+
+# 影像、語音、文字
+numpy==2.5.2
+opencv-python==5.0.0.93
+pillow==12.3.0
+pyttsx3==2.99                 # 筆電端中文語音
+pywin32==312
+opencc-python-reimplemented==0.1.7   # 語音辨識結果轉臺灣繁體
+pypinyin==0.55.0              # 用發音比對模式名稱（讀字／獨自）
+
+# 伺服器與啟動器
+cryptography==50.0.2          # 產生自簽憑證
+qrcode==8.2                   # 啟動器的 QR Code

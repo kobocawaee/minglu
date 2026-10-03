@@ -1,82 +1,156 @@
-# 資服參賽版：改了什麼、怎麼跑
+# 視覺助理（資服參賽版）
 
-這份是原 `code_package` 的修改版。原始檔案沒有被覆蓋，仍在 `code_package/`。
+給視障者使用的視覺助理：**手機當眼睛和喇叭，筆電負責辨識**。
+手機鏡頭拍到的畫面送回筆電，由筆電上的模型辨識後，用語音唸給使用者聽。
+影像和聲音都只在你自己的筆電上處理，不會送到第三方雲端。
 
-## 改了什麼
+---
 
-| 檔案 | 修改 |
+## 一、安裝（每台電腦只需要做一次）
+
+### 需要準備
+
+| 項目 | 說明 |
 |---|---|
-| `app/ocr.py` | RapidOCR → EasyOCR（繁體中文 + 英文） |
-| `app/speak.py` | 拿掉 Piper `zh_CN-huayan`；中文改用 Windows 內建台灣中文語音 |
-| `app/messages.py`（新增） | 所有固定句子的中英對照表 |
-| `app/config.py` | 新增 `LANG`、`OCR_LANGS`、`OCR_MIN_CONF` |
-| `app/quality.py`、`crossing.py`、`light_classifier.py`、`pipeline.py`、`assistant.py` | 寫死的英文句子改成查對照表 |
-| `app/server.py` | 手機頁面改繁中，語音優先選台灣中文，中文警示詞也會觸發強震動 |
-| `code/score_field_clips.py` | 加一行固定用英文輸出（它靠比對英文句子計分） |
+| 電腦 | Windows 10 / 11 |
+| 顯示卡 | NVIDIA 顯示卡，顯示記憶體 **8 GB 以上**（沒有也能跑，但每次回答要好幾十秒） |
+| Python | **3.10 ～ 3.12**，沒有的話安裝程式會打開下載頁。安裝時要勾選「Add python.exe to PATH」 |
+| 硬碟空間 | 約 20 GB |
+| 網路 | 第一次安裝要下載約 12 GB，之後可以離線使用 |
+| Hugging Face 帳號 | 免費註冊，用來下載 Google 的 Gemma 模型 |
 
-沒有動：LYTNetV2、YOLOv8n、SmolVLM、Gemma、所有門檻與判斷邏輯。
+### 安裝步驟
 
-`app/config.py` 的 `LANG = "en"` 可以切回和論文完全相同的英文句子。
+1. 解壓縮，雙擊 **`安裝.bat`**。
+2. 等它自動安裝套件，大約半小時到一小時以上。
+3. 安裝程式會帶你登入 Hugging Face，**這一步要自己操作**：
+   1. 到 <https://huggingface.co/join> 註冊帳號。
+   2. 打開 <https://huggingface.co/google/gemma-3-4b-it>，按「Acknowledge license」並同意條款。
+   3. 打開 <https://huggingface.co/settings/tokens>，按「Create new token」，類型選「Read」，建立後複製。
+   4. 回到安裝視窗，按滑鼠右鍵貼上權杖，按 Enter。貼上時畫面不會顯示任何字，這是正常的。
+4. 接著它會先把模型下載好。看到「安裝完成！」就可以用了，桌面上會多一個「視覺助理」圖示。
 
-## 全中文輸出：Gemma 後端
+> 中途失敗或關掉了，再雙擊一次 `安裝.bat` 就好，已經完成的步驟會跳過。
 
-周遭、室內、物品三個模式的描述原本由 SmolVLM 產生，它只會英文。
-現在預設後端改成 `gemma_hf`：Gemma-3-4b 透過 transformers 跑在 NVIDIA 顯示卡上，用繁體中文提示詞，輸出繁體中文。
+---
 
-| 新增／修改 | 內容 |
+## 二、使用
+
+1. 雙擊桌面的 **「視覺助理」**，按 **「啟動」**，等大約 30 秒。
+2. 出現 QR Code 後，用手機相機掃描，就會打開網頁。
+3. 第一次會詢問相機、麥克風、動作與方向的權限，請按「允許」。
+4. 用完按「停止」，或直接關掉視窗。
+
+> 也可以雙擊 `啟動.bat`，用終端機視窗啟動，畫面上會顯示詳細紀錄。
+
+### 手機要怎麼連到電腦
+
+| 情況 | 做法 |
 |---|---|
-| `app/backends/gemma_hf.py`（新增） | Gemma 的顯示卡後端 |
-| `app/config.py` | `BACKEND = "gemma_hf"`、`GEMMA_MODEL`、繁中提示詞 `MODE_PROMPTS_ZH` |
-| `app/postprocess.py`、`app/pipeline.py` | 中文描述的整理、中文裡「提到人」的判斷 |
+| 手機和電腦在**同一個 Wi-Fi** | 直接掃 QR Code。第一次會出現「不是私人連線」，按「顯示詳細資訊」→「造訪此網站」 |
+| 手機在**外面**（用行動網路） | 電腦和手機都安裝 [Tailscale](https://tailscale.com/download)，登入同一個帳號 |
+| 想要**沒有憑證警告、能加到主畫面像 App 一樣用** | 照下一節開啟 Tailscale 的 HTTPS |
 
-第一次使用 Gemma 前：到 Hugging Face 的 `google/gemma-3-4b-it` 頁面登入並同意使用條款，
-然後在電腦上執行 `huggingface-cli login`。
+### 進階：Tailscale HTTPS（沒有警告，可加到主畫面）
 
-要切回原本的英文 SmolVLM：執行時加 `--backend smolvlm`。
+1. 到 <https://login.tailscale.com/admin/dns>，在「HTTPS Certificates」按「Enable HTTPS」。
+2. 重新啟動視覺助理，QR Code 會變成 `https://你的電腦名稱.xxxx.ts.net:8443` 這樣的網址。
+3. iPhone 用 Safari 打開這個網址，按「分享」→「加入主畫面」。
 
-## 安裝（Windows，Python 3.10）
+> 開啟 HTTPS 後，電腦的名稱會出現在公開的憑證紀錄裡。別人看得到名稱，但沒有加入你的 Tailscale 就連不進來。
+
+---
+
+## 三、功能
+
+### 點畫面：依模式描述
+
+點畫面任何地方，系統會依照目前的模式描述眼前的畫面。左上角可以切換模式：
+
+| 模式 | 做什麼 |
+|---|---|
+| 自動 | 依畫面自動判斷要用哪個模式 |
+| 過馬路 | 行人號誌的燈號，以及路上的車輛 |
+| 周遭環境 | 描述前方的景物 |
+| 室內 | 室內格局與障礙物 |
+| 讀字 | 唸出看到的文字 |
+| 辨識物品 | 手上拿的是什麼 |
+
+**連續**開關打開後，會自動一張接一張描述。每次都會等上一句唸完才拍下一張。
+
+### 語音提問：按下方按鈕，或搖兩下手機
+
+聽到「嗶」一聲後說話，停頓一下就會自動結束。可以說：
+
+| 類型 | 例子 |
+|---|---|
+| 問問題 | 「現在可以過馬路嗎」「前面有什麼」「這上面寫什麼」「我手上拿的是什麼」 |
+| 追問 | 「那它是什麼顏色呢」「左邊那個呢」，會接著上一題回答 |
+| 切換模式 | 「切換到讀字模式」「過馬路模式」 |
+| 連續描述 | 「開始連續」「停止連續」 |
+| 調整設定 | 「說快一點」「說慢一點」「字大一點」「把語速調到快」「恢復預設設定」 |
+| 其他 | 「再說一次」「現在是什麼模式」「有哪些功能」 |
+
+### 設定（右上角齒輪）
+
+語速、字體大小、搖一搖提問的開關，都可以在這裡調整，也可以用語音調整。
+設定存在手機上，下次打開還在。
+
+---
+
+## 四、常見問題
+
+**每次打開主畫面 App 都要重新允許權限？**
+這是 iPhone 對網頁 App 的限制，沒辦法記住。改用 Safari 打開的話，可以在網址列的「大小」→「網站設定」把相機和麥克風設成「允許」。
+
+**手機說「連不到電腦」？**
+確認電腦上的視覺助理已經啟動，手機和電腦在同一個網路，或手機的 Tailscale 有打開。
+
+**說「畫面模糊，請拿穩鏡頭」？**
+這是畫面品質檢查，鏡頭拿穩一點、光線亮一點再試。
+
+**顯示記憶體不夠？**
+用 `啟動.bat --no-voice` 啟動，會關掉語音提問，省下約 1.6 GB。
+
+---
+
+## 五、給開發者
+
+### 打包給別人
+
+雙擊 **`打包.bat`**，會在上一層資料夾產生 `視覺助理_資服版_日期.zip`。
+它會自動排除虛擬環境 `.venv`、憑證與私鑰 `certs`、以及開發暫存檔。
+
+> **不要直接把整個資料夾複製給別人**：`certs` 裡有 Tailscale 網域的私鑰。
+
+### 和原本 `code_package` 的差別
+
+原始檔案沒有被覆蓋，仍在 `code_package/`。沒有動到的部分：LYTNetV2、YOLOv8n、SmolVLM、所有門檻與判斷邏輯。
+
+| 檔案 | 內容 |
+|---|---|
+| `app/backends/gemma_hf.py` | Gemma-3-4b 跑在 NVIDIA 顯示卡上（4-bit），輸出繁體中文；支援多輪對話 |
+| `app/voice.py` | 語音辨識（Whisper）、指令判斷、語音提問、追問 |
+| `app/server.py` | 手機頁面：模式選單、語音提問、設定、斷線提示、搖一搖、可加到主畫面；`/ask`、`/ping` |
+| `app/messages.py` | 所有固定句子的中英對照表 |
+| `app/ocr.py` | RapidOCR 改成 EasyOCR（繁體中文 + 英文） |
+| `app/speak.py` | 中文改用 Windows 內建的台灣中文語音 |
+| `app/config.py` | `LANG`、`BACKEND`、`GEMMA_4BIT`、`ASR_MODEL` 等設定 |
+| `launcher.pyw` | 啟動器視窗：進度、QR Code、紀錄 |
+| `安裝.bat`、`tools/setup_helper.py` | 安裝程式 |
+| `打包.bat`、`tools/pack.py` | 打包程式 |
+| `code/score_field_clips.py` | 固定用英文輸出（它靠比對英文句子計分） |
+
+`app/config.py` 裡的 `LANG = "en"` 可以切回和論文完全相同的英文句子。
+執行時加上 `--backend smolvlm`，可以換回原本的英文 SmolVLM。
+
+### 手動安裝（不用 `安裝.bat`）
 
 ```
 python -m venv .venv
 .venv\Scripts\activate
-pip install torch torchvision          # 要用顯示卡請依 pytorch.org 的指令裝 CUDA 版
-pip install transformers huggingface_hub ultralytics easyocr opencv-python pillow numpy pyttsx3
-huggingface-cli login                  # Gemma 需要，先在模型頁面同意條款
-git clone https://github.com/samuelyu2002/ImVisible external/ImVisible
+pip install torch==2.14.1 torchvision==0.29.1 --index-url https://download.pytorch.org/whl/cu126
+pip install -r requirements.txt
+hf auth login
+python -m app.server --https
 ```
-
-- 第一次執行會自動下載 Gemma、YOLOv8n、EasyOCR 的模型，需要連網一次。
-- 手機模式要用 `--https`，需要 `openssl` 指令（裝 Git for Windows 就有）。
-- 中文語音：Windows 設定 → 時間與語言 → 語音，確認有「中文（台灣）」。
-- 筆電端英文語音要用 Piper 的話：`pip install piper-tts`，
-  再 `python -m piper.download_voices en_US-lessac-medium --data-dir models/piper`。不裝也能跑。
-
-## 執行（都在這個資料夾下）
-
-```
-python -m app.assistant --mode read --source 某張圖.jpg     # 單張圖測試
-python -m app.assistant --mode street                      # 用電腦的攝影機
-python -m app.server --https                               # 手機當鏡頭和喇叭
-```
-
-手機和電腦連同一個 Wi-Fi 或熱點，手機瀏覽器打開終端機印出的網址。
-
-## 不帶電腦出門：讓手機從外面連回實驗室電腦
-
-伺服器就是一個網頁，手機只要連得到電腦就能用。電腦留在實驗室開著，手機用行動網路連回來。
-代價是不再「完全離線」：畫面會經過網路傳回你自己的電腦（不是第三方雲端）。
-
-**做法 A：Tailscale（私人網路，只有你的裝置連得到）**
-
-1. 電腦和手機都安裝 Tailscale，登入同一個帳號。
-2. 電腦執行 `python -m app.server --https`。
-3. 電腦執行 `tailscale ip -4` 查出它的位址（100 開頭）。
-4. 手機瀏覽器打開 `https://<那個位址>:8443`，憑證警告按「繼續前往」。
-
-**做法 B：Cloudflare 臨時通道（不用在手機裝東西，但網址是公開的）**
-
-1. 電腦執行 `python -m app.server`（不要加 `--https`）。
-2. 另開一個終端機執行 `cloudflared tunnel --url http://localhost:8000`。
-3. 手機打開它印出的 `https://….trycloudflare.com` 網址。
-
-知道網址的人都能連，畫面會經過 Cloudflare，只適合測試。
