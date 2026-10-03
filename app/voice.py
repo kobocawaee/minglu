@@ -32,12 +32,16 @@ def load_asr():
     global _ASR, _CC
     import torch
     import transformers
-    from transformers import pipeline as hf_pipeline
+    from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor
     cuda = torch.cuda.is_available()
+    dtype = torch.float16 if cuda else torch.float32
     dtype_kw = "dtype" if int(transformers.__version__.split(".")[0]) >= 5 else "torch_dtype"
-    _ASR = hf_pipeline("automatic-speech-recognition", model=config.ASR_MODEL,
-                       device="cuda" if cuda else "cpu",
-                       **{dtype_kw: torch.float16 if cuda else torch.float32})
+    # 不用 transformers 的 pipeline：它會忽略 language="zh"，短句常被誤判成別的語言（實測「說快一點」變冰島文）
+    processor = AutoProcessor.from_pretrained(config.ASR_MODEL)
+    model = AutoModelForSpeechSeq2Seq.from_pretrained(config.ASR_MODEL, **{dtype_kw: dtype})
+    model = model.to("cuda" if cuda else "cpu").eval()
+    model.generation_config.forced_decoder_ids = None
+    _ASR = (processor, model, dtype)
     try:
         from opencc import OpenCC
         _CC = OpenCC("s2twp")
@@ -47,10 +51,14 @@ def load_asr():
 
 
 def transcribe(pcm: np.ndarray) -> str:
-    """16kHz float32 單聲道 → 繁體中文文字。聽不出內容時回傳空字串。"""
-    out = _ASR({"raw": pcm, "sampling_rate": 16000},
-               generate_kwargs={"language": "zh", "task": "transcribe"})
-    text = (out.get("text") or "").strip()
+    """16kHz float32 單聲道 → 繁體中文文字（固定用中文辨識）。聽不出內容時回傳空字串。"""
+    import torch
+    processor, model, dtype = _ASR
+    feats = processor(pcm, sampling_rate=16000, return_tensors="pt").input_features
+    feats = feats.to(model.device, dtype)
+    with torch.inference_mode():
+        ids = model.generate(feats, language="zh", task="transcribe", max_new_tokens=120)
+    text = processor.batch_decode(ids, skip_special_tokens=True)[0].strip()
     if _CC:
         text = _CC.convert(text)
     if _HALLU_RE.search(text):
@@ -77,14 +85,29 @@ _CONT_ON_RE = re.compile(r"(開始|開啟|打開|開)(連續|持續)|(連續|持
 _CONT_OFF_RE = re.compile(r"(停止|關閉|關掉|關|結束|暫停)(連續|持續)|(連續|持續)(模式)?(關|停|關閉|停止)")
 _REPEAT_RE = re.compile(r"再說一次|再说一次|重複|重复|再講一次|剛剛說什麼|剛才說什麼")
 # 個人化設定（實際調整在手機上做，這裡只判斷是哪個設定、往哪邊調）
+#   短句容易聽成同音字：「字」→「自、子」，「語速」→「雨速、與速」，所以比對時把同音字也算進去
+_Z = "[字自子紫]"                                   # 字
+_YS = "(?:[語语雨與与於于魚鱼予宇羽][速素宿])"         # 語速（「速度」只在「速度調到快」這種明確說法才算，免得問「車速度快嗎」被當成調語速）
+_SAY = "(?:說|说|講|讲|唸|念|講話|说话|說話)"
+_SET_VERB = "(?:調|调|設|设|改|變|变|換|换)(?:到|成|為|为)?"
+_RATE_VALUES = {"很快": 3, "最快": 3, "快": 2, "標準": 1, "标准": 1, "正常": 1, "普通": 1, "一般": 1,
+                "預設": 1, "预设": 1, "慢": 0, "最慢": 0}
+_FONT_VALUES = {"特大": 2, "最大": 2, "大": 1, "標準": 0, "标准": 0, "正常": 0, "一般": 0, "預設": 0,
+                "预设": 0, "小": 0, "最小": 0}
+_RATE_SET_RE = re.compile("(?:" + _YS + "|速度)(?:也)?" + _SET_VERB + "(很快|最快|快|標準|标准|正常|普通|一般|預設|预设|最慢|慢)")
+_FONT_SET_RE = re.compile(_Z + "(?:體|体|型)?(?:的)?(?:大小)?" + _SET_VERB + "(特大|最大|大|標準|标准|正常|一般|預設|预设|最小|小)")
+_SETTING_WORDS_RE = re.compile(_YS + "|" + _Z + "(?:體|体|型)|設定|设定|震動|震动|搖一搖|摇一摇")
+
 _SETTING_RULES = [
     (re.compile(r"(恢復|還原|还原|重設|重设)(成|到)?(預設|预设|原本|原來|原来)|重設設定|重设设定"), ("reset", None)),
-    (re.compile(r"(說|说|講|讲|唸|念|語速|语速|速度|講話|說話)(話)?(再|可以)?(快|加快)(一點|一点|一些|點|点)?"
-                r"|語速(調|调)?(快|加快)|^(再)?快(一點|一点|一些)$"), ("rate", "up")),
-    (re.compile(r"(說|说|講|讲|唸|念|語速|语速|速度|講話|說話)(話)?(再|可以)?(慢|放慢)(一點|一点|一些|點|点)?"
-                r"|語速(調|调)?(慢|放慢)|^(再)?慢(一點|一点|一些)$"), ("rate", "down")),
-    (re.compile(r"字(體|体)?(再|可以)?(大|放大)(一點|一点|一些|點|点)?|(放大|加大)字(體|体)?"), ("font", "up")),
-    (re.compile(r"字(體|体)?(再|可以)?(小|縮小|缩小)(一點|一点|一些|點|点)?|縮小字(體|体)?|缩小字"), ("font", "down")),
+    (re.compile("(?:" + _SAY + "|" + _YS + ")(?:話)?(?:再|可以)?(?:快|加快)(?:一點|一点|一些|點|点)?"
+                "|" + _YS + "(?:調|调)?(?:快|加快)|^(?:再)?快(?:一點|一点|一些)$"), ("rate", "up")),
+    (re.compile("(?:" + _SAY + "|" + _YS + ")(?:話)?(?:再|可以)?(?:慢|放慢)(?:一點|一点|一些|點|点)?"
+                "|" + _YS + "(?:調|调)?(?:慢|放慢)|^(?:再)?慢(?:一點|一点|一些)$"), ("rate", "down")),
+    (re.compile(_Z + "(?:體|体|型)?(?:再|可以)?(?:大|放大)(?:一點|一点|一些|點|点)|(?:放大|加大)" + _Z
+                + "|" + _Z + "(?:體|体|型)(?:再)?(?:大|放大)"), ("font", "up")),
+    (re.compile(_Z + "(?:體|体|型)?(?:再|可以)?(?:小|縮小|缩小)(?:一點|一点|一些|點|点)|縮小" + _Z + "|缩小" + _Z
+                + "|" + _Z + "(?:體|体|型)(?:再)?(?:小|縮小|缩小)"), ("font", "down")),
     (re.compile(r"(關掉|关掉|關閉|关闭|關|关|停止|取消|不要)(震動|振動|震动|振动)|(震動|振動|震动|振动)(關掉|关掉|關閉|关闭|關|关)"), ("vib", False)),
     (re.compile(r"(打開|打开|開啟|开启|開|开)(震動|振動|震动|振动)|(震動|振動|震动|振动)(打開|打开|開啟|开启|開|开)"), ("vib", True)),
     (re.compile(r"(關掉|关掉|關閉|关闭|關|关|停止|取消|不要)(搖一搖|摇一摇|搖動|摇动|搖晃|摇晃)|(搖一搖|摇一摇)(關掉|关掉|關閉|关闭|關|关)"), ("shake", False)),
@@ -152,9 +175,17 @@ def parse_command(text: str):
         return ("continuous", False)
     if _CONT_ON_RE.search(s):
         return ("continuous", True)
+    m = _RATE_SET_RE.search(s)                     # 「把語速調到快」
+    if m:
+        return ("setting", ("rate", _RATE_VALUES[m.group(1)]))
+    m = _FONT_SET_RE.search(s)                     # 「字體調成特大」
+    if m:
+        return ("setting", ("font", _FONT_VALUES[m.group(1)]))
     for rx, setting in _SETTING_RULES:
         if rx.search(s):
             return ("setting", setting)
+    if _SETTING_WORDS_RE.search(s) and not _ASK_READ_RE.search(s):
+        return ("setting_unknown", None)           # 有提到設定但聽不出要怎麼調 → 不要當成問題去描述畫面
     if _REPEAT_RE.search(s):
         return ("repeat", None)
     if _HELP_RE.search(s):
@@ -258,6 +289,8 @@ def command_reply(cmd, arg, current_mode="auto") -> str:
         return f"已切換到{mode_name(arg)}模式。"
     if cmd == "switch_unknown":
         return "沒聽清楚要切換到哪個模式。可以說：過馬路、周遭、室內、讀字、物品或自動。"
+    if cmd == "setting_unknown":
+        return "沒聽懂要怎麼調整。可以說：說快一點、說慢一點、字大一點、字小一點，或把語速調到快。"
     if cmd == "which_mode":
         return f"目前是{mode_name(current_mode)}模式。"
     if cmd == "continuous":
