@@ -46,6 +46,10 @@ BACKEND = None  # โหลดครั้งเดียวตอน start
 SAVE_DIR = None  # ถ้าตั้ง = เซฟเฟรม+output ไว้ debug
 _SEQ = 0
 GPU_LOCK = threading.Lock()   # [資服版] 描述和語音提問不要同時用顯示卡
+_STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
+_STATIC = {"/manifest.json": ("manifest.json", "application/manifest+json"),
+           "/icon-180.png": ("icon-180.png", "image/png"),
+           "/icon-512.png": ("icon-512.png", "image/png")}
 VOICE_READY = False
 
 PAGE = """<!doctype html>
@@ -56,6 +60,10 @@ PAGE = """<!doctype html>
 <meta name="theme-color" content="#000000">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="視覺助理">
+<link rel="manifest" href="/manifest.json">
+<link rel="apple-touch-icon" href="/icon-180.png">
+<link rel="icon" href="/icon-180.png">
 <title>視覺助理</title>
 <style>
   :root { --glass:rgba(16,17,22,.74); --line:rgba(255,255,255,.14); --muted:rgba(255,255,255,.66);
@@ -655,6 +663,10 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, PAGE, "text/html; charset=utf-8")
         elif self.path == "/ping":            # [資服版] 手機用來確認連線
             self._send(200, json.dumps({"ok": True}))
+        elif self.path in _STATIC:            # [資服版] 加入主畫面用的 App 設定與圖示
+            name, ctype = _STATIC[self.path]
+            with open(os.path.join(_STATIC_DIR, name), "rb") as f:
+                self._send(200, f.read(), ctype)
         else:
             self._send(404, json.dumps({"error": "not found"}))
 
@@ -814,6 +826,32 @@ def get_tailscale_ip():
         return None
 
 
+def get_tailscale_cert(certdir):
+    """[資服版] Tailscale 管理頁開了 HTTPS 憑證的話，向 Tailscale 取得正式憑證（手機不會再跳警告，
+    加到主畫面也能直接開）。回傳 (網域, cert, key)；沒開或失敗回傳 None，改用自簽憑證。"""
+    try:
+        r = subprocess.run(["tailscale", "status", "--json"], capture_output=True, timeout=10)
+        domains = json.loads(r.stdout.decode("utf-8", "replace")).get("CertDomains") or []
+    except Exception:
+        return None
+    if not domains:
+        return None
+    domain = domains[0]
+    os.makedirs(certdir, exist_ok=True)
+    cert = os.path.join(certdir, "tailscale.crt")
+    key = os.path.join(certdir, "tailscale.key")
+    try:   # 已有且未過期時 tailscale 會直接沿用，快過期才重新申請
+        r = subprocess.run(["tailscale", "cert", "--cert-file", cert, "--key-file", key, domain],
+                           capture_output=True, timeout=120)
+    except Exception as e:
+        print(f"[warn] 取得 Tailscale 憑證失敗，改用自簽憑證：{e}")
+        return None
+    if r.returncode != 0 or not (os.path.exists(cert) and os.path.exists(key)):
+        print(f"[warn] 取得 Tailscale 憑證失敗，改用自簽憑證：{r.stderr.decode('utf-8', 'replace').strip()}")
+        return None
+    return domain, cert, key
+
+
 def _make_cert_python(cert, key, ip):
     """[資服版] 用 cryptography 套件產生自簽憑證（Windows 通常沒有 openssl 指令）"""
     import datetime
@@ -912,20 +950,28 @@ def main():
     ip = args.host if args.host not in ("0.0.0.0", "") else get_lan_ip()
     srv = ThreadingHTTPServer((args.host, port), Handler)
     scheme = "http"
+    ts = None
     if args.https:
-        cert, key = ensure_cert(args.certdir, ip)
+        ts = get_tailscale_cert(args.certdir)
+        cert, key = (ts[1], ts[2]) if ts else ensure_cert(args.certdir, ip)
         ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         ctx.load_cert_chain(cert, key)
         srv.socket = ctx.wrap_socket(srv.socket, server_side=True)
         scheme = "https"
 
-    print(f"[info] 伺服器已啟動：{scheme}://{ip}:{port}")
-    print(f"       手機和電腦在同一個網路時開這個網址")
-    ts_ip = get_tailscale_ip()
-    if ts_ip:
-        print(f"       手機在外面（用 Tailscale）時開：{scheme}://{ts_ip}:{port}")
-    if args.https:
-        print("       （自簽憑證：第一次連線按「進階」→「繼續前往」）")
+    if ts:
+        print(f"[info] 伺服器已啟動（Tailscale 正式憑證）")
+        print(f"       手機開這個網址（在哪個網路都一樣，不會有憑證警告）：")
+        print(f"       https://{ts[0]}:{port}")
+        print(f"       想像 App 一樣用：Safari 打開後按「分享」→「加入主畫面」")
+    else:
+        print(f"[info] 伺服器已啟動：{scheme}://{ip}:{port}")
+        print(f"       手機和電腦在同一個網路時開這個網址")
+        ts_ip = get_tailscale_ip()
+        if ts_ip:
+            print(f"       手機在外面（用 Tailscale）時開：{scheme}://{ts_ip}:{port}")
+        if args.https:
+            print("       （自簽憑證：第一次連線按「進階」→「繼續前往」）")
     print("       按 Ctrl+C 停止")
     try:
         srv.serve_forever()
