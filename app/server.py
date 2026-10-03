@@ -73,7 +73,7 @@ PAGE = """<!doctype html>
 
   #bar { position:fixed; top:0; left:0; right:0; z-index:5; pointer-events:none;
          padding:calc(env(safe-area-inset-top) + 12px) 14px 0; }
-  #modeBtn, #cont, #menu { pointer-events:auto; }   /* 空白處的點擊照樣傳給 #tap */
+  #modeBtn, #cont, #menu, #gear, #settings { pointer-events:auto; }   /* 空白處的點擊照樣傳給 #tap */
   #head { display:flex; align-items:center; justify-content:space-between; gap:10px; }
   .glass { background:var(--glass); border:1px solid var(--line);
            -webkit-backdrop-filter:blur(18px) saturate(1.4); backdrop-filter:blur(18px) saturate(1.4); }
@@ -87,7 +87,6 @@ PAGE = """<!doctype html>
   /* 模式：點了才展開的下拉選單 */
   #modeBtn { display:flex; align-items:center; gap:10px; min-height:46px; padding:0 16px 0 14px;
              border-radius:999px; font:inherit; font-size:18px; font-weight:700; color:#fff; }
-  #modeBtn .lbl { font-size:15px; font-weight:600; color:var(--muted); }
   #modeBtn .chev { width:9px; height:9px; margin-left:2px; border-right:2.5px solid currentColor;
                    border-bottom:2.5px solid currentColor; transform:translateY(-3px) rotate(45deg); transition:transform .2s; }
   #modeBtn[aria-expanded="true"] .chev { transform:translateY(2px) rotate(-135deg); }
@@ -107,12 +106,32 @@ PAGE = """<!doctype html>
   /* 連續：開關 */
   #cont { display:flex; align-items:center; gap:10px; font-size:17px; font-weight:600; min-height:46px;
           padding:0 8px 0 14px; border-radius:999px; }
-  #contChk { -webkit-appearance:none; appearance:none; margin:0; width:48px; height:28px; border-radius:999px;
-             background:rgba(255,255,255,.25); position:relative; transition:background .2s; }
-  #contChk::after { content:""; position:absolute; top:3px; left:3px; width:22px; height:22px; border-radius:50%;
-                    background:#fff; transition:transform .2s; box-shadow:0 1px 3px rgba(0,0,0,.4); }
-  #contChk:checked { background:var(--ok); }
-  #contChk:checked::after { transform:translateX(20px); }
+  .sw { flex:none; -webkit-appearance:none; appearance:none; margin:0; width:48px; height:28px; border-radius:999px;
+        background:rgba(255,255,255,.25); position:relative; transition:background .2s; }
+  .sw::after { content:""; position:absolute; top:3px; left:3px; width:22px; height:22px; border-radius:50%;
+               background:#fff; transition:transform .2s; box-shadow:0 1px 3px rgba(0,0,0,.4); }
+  .sw:checked { background:var(--ok); }
+  .sw:checked::after { transform:translateX(20px); }
+
+  /* 設定：齒輪按鈕 + 面板 */
+  #head .right { display:flex; align-items:center; gap:8px; }
+  #gear { pointer-events:auto; width:46px; height:46px; border-radius:50%; display:flex; align-items:center;
+          justify-content:center; color:#fff; padding:0; }
+  #gear svg { width:22px; height:22px; }
+  #settings { display:none; pointer-events:auto; margin-top:10px; padding:8px 16px 14px; border-radius:22px;
+              background:rgba(22,23,28,.92); max-width:440px; }
+  #settings.open { display:block; animation:pop .16s ease-out; }
+  .srow { display:flex; align-items:center; justify-content:space-between; gap:12px; min-height:60px;
+          border-bottom:1px solid rgba(255,255,255,.08); font-size:18px; font-weight:700; }
+  .srow small { display:block; font-size:13px; font-weight:500; color:var(--muted); }
+  .seg { display:flex; gap:4px; padding:4px; border-radius:14px; background:rgba(255,255,255,.1); }
+  .seg button { min-width:46px; min-height:40px; padding:0 10px; border:0; border-radius:10px; background:transparent;
+                color:#fff; font:inherit; font-size:16px; font-weight:600; }
+  .seg button[aria-checked="true"] { background:#fff; color:#000; }
+  .sbtns { display:flex; gap:10px; margin-top:14px; }
+  .sbtns button { flex:1; min-height:50px; border:0; border-radius:14px; font:inherit; font-size:17px; font-weight:700; }
+  #resetSet { background:rgba(255,255,255,.12); color:#fff; }
+  #closeSet { background:#fff; color:#000; }
 
   /* 下方：結果卡片 + 語音提問按鈕 */
   #bottom { position:fixed; left:12px; right:12px; z-index:3; display:flex; flex-direction:column; gap:10px;
@@ -135,7 +154,7 @@ PAGE = """<!doctype html>
   #tag::before { content:""; width:8px; height:8px; border-radius:50%; background:currentColor; }
   #card.danger #tag { color:#fff; }
   #time { font-variant-numeric:tabular-nums; }
-  #out { font-size:25px; line-height:1.5; font-weight:500; min-height:1.5em; }
+  #out { font-size:var(--fs, 25px); line-height:1.5; font-weight:500; min-height:1.5em; }
   #out.hint { color:var(--muted); }
   /* 處理中：卡片頂端跑動的光條 */
   #prog { position:absolute; top:0; left:0; right:0; height:3px; opacity:0; transition:opacity .2s;
@@ -155,9 +174,29 @@ PAGE = """<!doctype html>
   <div id="bar">
     <div id="head">
       <button id="modeBtn" class="glass" aria-haspopup="true" aria-expanded="false" aria-controls="menu">
-        <span id="dot" class="off"></span><span class="lbl">模式</span><span id="modeName">自動</span><span class="chev"></span>
+        <span id="dot" class="off"></span><span id="modeName">自動</span><span class="chev"></span>
       </button>
-      <label id="cont" class="glass">連續<input type="checkbox" id="contChk" role="switch" aria-label="連續模式"></label>
+      <div class="right">
+        <label id="cont" class="glass">連續<input type="checkbox" id="contChk" class="sw" role="switch" aria-label="連續模式"></label>
+        <button id="gear" class="glass" aria-label="設定" aria-expanded="false" aria-controls="settings">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="3"></circle>
+            <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"></path>
+          </svg>
+        </button>
+      </div>
+    </div>
+    <div id="settings" class="glass" role="dialog" aria-label="設定">
+      <div class="srow"><span>語速</span>
+        <div class="seg" role="radiogroup" aria-label="語速" data-key="rate">
+          <button role="radio">慢</button><button role="radio">標準</button><button role="radio">快</button><button role="radio">很快</button>
+        </div></div>
+      <div class="srow"><span>字體大小</span>
+        <div class="seg" role="radiogroup" aria-label="字體大小" data-key="font">
+          <button role="radio">標準</button><button role="radio">大</button><button role="radio">特大</button>
+        </div></div>
+      <label class="srow" id="vibRow"><span>震動提示</span><input type="checkbox" class="sw" role="switch" data-key="vib" aria-label="震動提示"></label>
+      <div class="sbtns"><button id="resetSet">恢復預設</button><button id="closeSet">完成</button></div>
     </div>
     <div id="offline" role="alert">連不到電腦，正在重新連線…</div>
     <div id="menu" class="glass" role="menu" aria-label="選擇模式">
@@ -210,20 +249,71 @@ function setMode(m, announce){
   clearConvo();                                   // 換模式 = 換話題
   opts.forEach(o=>o.setAttribute('aria-checked', o.dataset.mode===m?'true':'false'));
   modeNameEl.textContent=modeName(m);
+  modeBtn.setAttribute('aria-label', '模式：'+modeName(m));
   tag.textContent=modeName(m);
   try{ localStorage.setItem('mode', m); }catch(e){}
   if(announce) speak(modeName(m)+'模式');
 }
 function openMenu(open){
+  if(open) openSettings(false);
   menu.classList.toggle('open', open);
   scrim.classList.toggle('open', open);
   modeBtn.setAttribute('aria-expanded', open?'true':'false');
   if(open){ const cur=opts.find(o=>o.getAttribute('aria-checked')==='true'); if(cur) cur.focus(); }
 }
 modeBtn.addEventListener('click', ()=>{ vibrate(20); openMenu(!menu.classList.contains('open')); });
-scrim.addEventListener('click', ()=>openMenu(false));
+scrim.addEventListener('click', ()=>{ openMenu(false); openSettings(false); });
 opts.forEach(o=>o.addEventListener('click', ()=>{ vibrate(30); setMode(o.dataset.mode, true); openMenu(false); }));
 setMode(MODE, false);
+
+// ---------------------------------------------------------------------------
+// [資服版] 個人化設定：語速、字體大小、震動；存在手機上，也可以用語音調整
+// ---------------------------------------------------------------------------
+const RATES=[0.75, 0.95, 1.2, 1.45], RATE_NAMES=['慢','標準','快','很快'];
+const FONTS=[25, 31, 38], FONT_NAMES=['標準','大','特大'];
+const CAN_VIB=('vibrate' in navigator);           // iPhone 的 Safari 不支援網頁震動
+const DEFAULTS={rate:1, font:0, vib:true};
+let SET=Object.assign({}, DEFAULTS);
+try{ Object.assign(SET, JSON.parse(localStorage.getItem('settings')||'{}')); }catch(e){}
+const settingsEl=document.getElementById('settings'), gear=document.getElementById('gear');
+const segs={}; document.querySelectorAll('.seg').forEach(s=>segs[s.dataset.key]=s);
+const vibSw=document.querySelector('.sw[data-key="vib"]');
+if(!CAN_VIB) document.getElementById('vibRow').style.display='none';
+
+function applySettings(){
+  document.documentElement.style.setProperty('--fs', FONTS[SET.font]+'px');
+  for(const k in segs) [...segs[k].children].forEach((b,i)=>b.setAttribute('aria-checked', i===SET[k]?'true':'false'));
+  vibSw.checked=!!SET.vib;
+  try{ localStorage.setItem('settings', JSON.stringify(SET)); }catch(e){}
+}
+// 調整設定，回傳要說的話（設定面板和語音指令共用）
+function changeSetting(key, value){
+  if(key==='reset'){ SET=Object.assign({}, DEFAULTS); applySettings(); return '已恢復預設設定。'; }
+  if(key==='vib'){
+    if(!CAN_VIB) return '這支手機的瀏覽器不支援震動。';
+    SET.vib=!!value; applySettings(); if(SET.vib) vibrate(120);
+    return SET.vib?'震動已開啟。':'震動已關閉。';
+  }
+  const max=(key==='rate'?RATES:FONTS).length-1, names=key==='rate'?RATE_NAMES:FONT_NAMES;
+  const label=key==='rate'?'語速':'字體';
+  let v=value==='up'?SET[key]+1:value==='down'?SET[key]-1:value;
+  if(v>max) return key==='rate'?'已經是最快的語速了。':'字已經是最大了。';
+  if(v<0) return key==='rate'?'已經是最慢的語速了。':'字已經是最小了。';
+  SET[key]=v; applySettings();
+  return label+'：'+names[v]+'。';
+}
+function openSettings(open){
+  settingsEl.classList.toggle('open', open);
+  gear.setAttribute('aria-expanded', open?'true':'false');
+  if(open){ menu.classList.remove('open'); modeBtn.setAttribute('aria-expanded','false'); }
+  scrim.classList.toggle('open', open || menu.classList.contains('open'));
+}
+gear.addEventListener('click', ()=>{ vibrate(20); openSettings(!settingsEl.classList.contains('open')); });
+document.getElementById('closeSet').addEventListener('click', ()=>openSettings(false));
+document.getElementById('resetSet').addEventListener('click', ()=>speak(changeSetting('reset')));
+for(const k in segs) [...segs[k].children].forEach((b,i)=>b.addEventListener('click', ()=>speak(changeSetting(k, i))));
+vibSw.addEventListener('change', ()=>speak(changeSetting('vib', vibSw.checked)));
+applySettings();
 
 navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}, width:{ideal:1920}, height:{ideal:1080}}})
   .then(s=>{ video.srcObject=s; dot.classList.remove('off'); })
@@ -287,7 +377,7 @@ async function ping(){
 setInterval(ping, 10000);
 
 async function keepAwake(){ try{ wakeLock=await navigator.wakeLock.request('screen'); }catch(e){} }
-function vibrate(p){ try{ navigator.vibrate&&navigator.vibrate(p); }catch(e){} }
+function vibrate(p){ if(!SET.vib) return; try{ navigator.vibrate&&navigator.vibrate(p); }catch(e){} }
 
 // เลือกเสียงตามภาษา — อังกฤษชัดๆ + จีน (OCR อ่านป้ายจีนได้ ต้องพูดจีนได้ด้วย ไม่ให้เสียงเพี้ยน)
 let VOICE=null, VOICE_ZH=null;
@@ -310,7 +400,7 @@ const LATIN_RUN=/[A-Za-z][A-Za-z' -]*[A-Za-z]|[A-Za-z]/g;
 function utter(t, zh){ const u=new SpeechSynthesisUtterance(t);
   if(zh){ u.lang='zh-TW'; if(VOICE_ZH){ u.voice=VOICE_ZH; u.lang=VOICE_ZH.lang; } }
   else { u.lang='en-US'; if(VOICE)u.voice=VOICE; }
-  u.rate=0.95; u.pitch=1.0; speechSynthesis.speak(u); }
+  u.rate=RATES[SET.rate]||0.95; u.pitch=1.0; speechSynthesis.speak(u); }
 function speak(t){ try{
     speechSynthesis.cancel();
     const s=String(t);
@@ -474,7 +564,10 @@ async function sendAsk(audio){
     }
     if(j.action==='switch') setMode(j.mode, false);
     if(j.action==='continuous'){ resumeCont=!!j.on; }
-    if(j.action==='repeat'){
+    if(j.action==='setting'){
+      const msg=changeSetting(j.key, j.value);
+      show(msg); speak(msg);                        // 用新的語速說，馬上聽得出差別
+    }else if(j.action==='repeat'){
       show(lastText||'還沒有可以重複的內容。'); speak(lastText||'還沒有可以重複的內容');
     }else{
       const danger=j.action==='answer' && DANGER.test(j.text);
@@ -595,6 +688,8 @@ class Handler(BaseHTTPRequestHandler):
                     out["mode"] = arg
                 elif kind == "continuous":
                     out["on"] = arg
+                elif kind == "setting":           # 由手機調整並決定要說的話
+                    out["key"], out["value"] = arg
                 print(f"[ask] 指令：{kind} {arg}")
                 self._send(200, json.dumps(out))
                 return
