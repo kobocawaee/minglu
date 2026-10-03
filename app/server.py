@@ -333,8 +333,17 @@ vibSw.addEventListener('change', ()=>speak(changeSetting('vib', vibSw.checked)))
 shakeSw.addEventListener('change', ()=>speak(changeSetting('shake', shakeSw.checked)));
 applySettings();
 
-navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}, width:{ideal:1920}, height:{ideal:1080}}})
-  .then(s=>{ video.srcObject=s; dot.classList.remove('off'); })
+// 相機和麥克風一起要，iPhone 只會跳一次權限視窗（主畫面 App 每次開啟都會重問，無法記住）
+//   麥克風拿到權限後馬上關掉：一直開著的話 iPhone 會切到通話模式，喇叭聲音變小
+const CAM={facingMode:{ideal:'environment'}, width:{ideal:1920}, height:{ideal:1080}};
+function startCamera(s){
+  s.getAudioTracks().forEach(t=>t.stop());
+  video.srcObject=new MediaStream(s.getVideoTracks());
+  dot.classList.remove('off');
+}
+navigator.mediaDevices.getUserMedia({video:CAM, audio:true})
+  .then(startCamera)
+  .catch(()=>navigator.mediaDevices.getUserMedia({video:CAM}).then(startCamera))   // 不給麥克風也能用相機
   .catch(e=>{ show('相機錯誤：'+e.message); speak('相機錯誤'); });
 
 // 更新結果卡片
