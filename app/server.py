@@ -487,7 +487,8 @@ async function describe(){
   card.classList.remove('busy');
   busy=false;
   // 斷線時不重試（避免一直唸錯誤），等連線恢復再接著跑
-  if(contChk.checked && online) setTimeout(()=>{ if(contChk.checked) describe(); }, 1500);
+  // 連續模式：等這一句唸完、停頓 0.8 秒再拍下一張，後面的結果不會蓋掉還沒唸完的句子
+  if(contChk.checked && online) whenQuiet(()=>{ if(contChk.checked) describe(); }, 800);
 }
 
 // ---------------------------------------------------------------------------
@@ -509,7 +510,15 @@ function setMic(state){
   micText.textContent=state==='listen'?'聆聽中…再按一次結束':state==='think'?'思考中…':'語音提問';
   mic.setAttribute('aria-label', micText.textContent);
 }
-function whenQuiet(fn){ const tick=()=>{ if(speechSynthesis.speaking) setTimeout(tick,300); else fn(); }; setTimeout(tick,600); }
+// 等語音唸完（含排隊中的句子）再停頓 gap 毫秒才執行；最多等 30 秒，避免 iPhone 偶爾卡在「播放中」
+function whenQuiet(fn, gap){
+  const t0=Date.now();
+  const tick=()=>{
+    const talking=speechSynthesis.speaking||speechSynthesis.pending;
+    if(talking && Date.now()-t0<30000) setTimeout(tick,250); else setTimeout(fn, gap||0);
+  };
+  setTimeout(tick,300);
+}
 function restoreCont(){
   if(resumeCont){ contChk.checked=true; whenQuiet(()=>{ if(contChk.checked) describe(); }); }
   resumeCont=false;
