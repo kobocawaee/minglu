@@ -23,7 +23,8 @@ _ASR = None
 _CC = None          # 簡體 → 臺灣繁體（Whisper 中文常輸出簡體）
 
 # Whisper 在幾乎沒聲音時常見的幻覺字幕
-_HALLU_RE = re.compile(r"字幕|訂閱|點贊|點讚|按讚|謝謝觀看|謝謝收看|感謝觀看|请不吝|明鏡|Amara")
+_HALLU_RE = re.compile(r"字幕|訂閱|點贊|點讚|按讚|謝謝觀看|謝謝收看|感謝觀看|请不吝|明鏡|Amara|"
+                       r"獨播|独播|劇場|剧场|Television|YoYo|ありがとう|視聴|视听|請不吝|下集|本集")
 _PUNCT_RE = re.compile(r"[\s，。、！？!?,.：:；;「」『』（）()…~～-]+")
 
 
@@ -50,15 +51,38 @@ def load_asr():
     transcribe(np.zeros(16000, dtype=np.float32))     # warmup
 
 
+# 第一次辨識完全沒有中文字時，第二次用這段詞彙當提示，把結果拉回中文
+#   （實測「說快一點」即使指定中文，仍會被辨識成「Svo kæt ég」這種拉丁字母）
+#   只在第二次才用：每次都帶提示的話，沒講話時可能憑空「聽到」提示裡的指令
+_ASR_HINT = "說快一點、說慢一點、字大一點、字小一點、切換到讀字模式、過馬路模式、前面有什麼？"
+_HAS_CJK_RE = re.compile(r"[㐀-鿿]")
+
+
+def _whisper(feats, prompt_ids=None):
+    import torch
+    processor, model, _ = _ASR
+    kwargs = {"language": "zh", "task": "transcribe"}
+    if prompt_ids is not None:
+        kwargs["prompt_ids"] = prompt_ids
+    with torch.inference_mode():
+        ids = model.generate(feats, **kwargs)
+    text = processor.batch_decode(ids, skip_special_tokens=True)[0].strip()
+    if prompt_ids is not None and text.startswith(_ASR_HINT):    # 有些版本會把提示一起解碼出來
+        text = text[len(_ASR_HINT):].strip()
+    return text
+
+
 def transcribe(pcm: np.ndarray) -> str:
     """16kHz float32 單聲道 → 繁體中文文字（固定用中文辨識）。聽不出內容時回傳空字串。"""
-    import torch
     processor, model, dtype = _ASR
     feats = processor(pcm, sampling_rate=16000, return_tensors="pt").input_features
     feats = feats.to(model.device, dtype)
-    with torch.inference_mode():
-        ids = model.generate(feats, language="zh", task="transcribe", max_new_tokens=120)
-    text = processor.batch_decode(ids, skip_special_tokens=True)[0].strip()
+    text = _whisper(feats)
+    if text and not _HAS_CJK_RE.search(text):
+        retry = _whisper(feats, processor.get_prompt_ids(_ASR_HINT, return_tensors="pt").to(model.device))
+        print(f"[ask] 第一次辨識成「{text}」，沒有中文字，加提示重新辨識 → 「{retry}」")
+        if _HAS_CJK_RE.search(retry):
+            text = retry
     if _CC:
         text = _CC.convert(text)
     if _HALLU_RE.search(text):
