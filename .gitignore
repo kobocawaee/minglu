@@ -1,0 +1,9 @@
+# 版本控制只追蹤程式碼；環境、模型權重、憑證、圖片不放進來
+.venv/
+__pycache__/
+*.pt
+external/ImVisible/Model/LytNetV2_weights
+certs/
+test_frames/
+test_images/
+results/

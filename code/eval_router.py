@@ -1,0 +1,127 @@
+"""
+วิเคราะห์ผล auto-router (mode selection) — confusion matrix + per-mode precision/recall
++ ⭐ street-recall (สำคัญสุดตาม risk framework: misroute ฉาก street = สืบทอด L4)
+
+อินพุต: CSV จาก Mhiu (รัน app/pipeline.route บนชุด labeled ~60 รูป) — คอลัมน์:
+    filename, true_mode, routed_mode   (ชื่อคอลัมน์ปรับได้ด้วย --true-col/--pred-col)
+
+วิธีใช้:
+    python code/eval_router.py results/router_output.csv
+    python code/eval_router.py results/router_output.csv --true-col label --pred-col routed
+ผล → results/router_eval.md (ตาราง + street-recall + รายการ misroute) + print
+
+⚠️ street-recall = ของรูปที่ *ควรเป็น street* ทั้งหมด ระบบ route เข้า street ถูกกี่ % (recall ของคลาส street)
+   misroute street→อื่น = อันตรายสุด (พลาด hazard ระดับ L4) → list ออกมาให้ตรวจ
+"""
+import argparse
+import csv
+import sys
+from collections import defaultdict, Counter
+from pathlib import Path
+
+try:
+    sys.stdout.reconfigure(encoding="utf-8")
+except (AttributeError, ValueError):
+    pass
+
+ROOT = Path(__file__).resolve().parent.parent
+
+
+def load(path, true_col, pred_col, file_col):
+    rows = []
+    with open(path, encoding="utf-8-sig", newline="") as f:
+        for r in csv.DictReader(f):
+            rows.append((r.get(file_col, "").strip(),
+                         r.get(true_col, "").strip().lower(),
+                         r.get(pred_col, "").strip().lower()))
+    return [r for r in rows if r[1] and r[2]]
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("csv_path", help="router output CSV (filename,true_mode,routed_mode)")
+    ap.add_argument("--file-col", default="filename")
+    ap.add_argument("--true-col", default="true_mode")
+    ap.add_argument("--pred-col", default="routed_mode")
+    ap.add_argument("--out", default=str(ROOT / "results" / "router_eval.md"))
+    args = ap.parse_args()
+
+    rows = load(args.csv_path, args.true_col, args.pred_col, args.file_col)
+    n = len(rows)
+    modes = sorted(set([r[1] for r in rows]) | set([r[2] for r in rows]))
+
+    # confusion[true][pred] = count
+    conf = defaultdict(Counter)
+    correct = 0
+    for _, t, p in rows:
+        conf[t][p] += 1
+        if t == p:
+            correct += 1
+    overall_acc = correct / n if n else 0.0
+
+    # per-mode precision/recall
+    per = {}
+    for m in modes:
+        tp = conf[m][m]
+        support = sum(conf[m].values())                     # จริงเป็น m
+        pred_pos = sum(conf[t][m] for t in modes)           # ทำนายเป็น m
+        recall = tp / support if support else None
+        prec = tp / pred_pos if pred_pos else None
+        per[m] = (tp, support, pred_pos, prec, recall)
+
+    # misroutes โดยเฉพาะ street→อื่น
+    street_miss = [(fn, p) for fn, t, p in rows if t == "street" and p != "street"]
+    all_miss = [(fn, t, p) for fn, t, p in rows if t != p]
+
+    def pct(x):
+        return f"{x*100:.1f}%" if isinstance(x, float) else "N/A"
+
+    L = []
+    L.append("# Auto-router evaluation — routing accuracy + street-recall (Aomam)\n")
+    L.append(f"n = {n} images · modes = {', '.join(modes)} · source: `{Path(args.csv_path).name}`\n")
+    L.append(f"**Overall routing accuracy: {correct}/{n} = {pct(overall_acc)}**\n")
+
+    L.append("\n## Per-mode precision / recall\n")
+    L.append("| Mode | support | routed→correct | Precision | Recall |")
+    L.append("|---|---|---|---|---|")
+    for m in modes:
+        tp, sup, pp, pr, rc = per[m]
+        star = " ⭐" if m == "street" else ""
+        L.append(f"| {m}{star} | {sup} | {tp} | {pct(pr) if pr is not None else 'N/A'} | "
+                 f"{pct(rc) if rc is not None else 'N/A'} |")
+
+    L.append("\n## Confusion matrix (rows = true, cols = routed)\n")
+    L.append("| true \\ routed | " + " | ".join(modes) + " |")
+    L.append("|" + "---|" * (len(modes) + 1))
+    for t in modes:
+        L.append(f"| **{t}** | " + " | ".join(str(conf[t][p]) for p in modes) + " |")
+
+    st = per.get("street")
+    L.append("\n## ⭐ Street-recall (safety-critical — misroute street inherits L4)\n")
+    if st and st[1]:
+        L.append(f"- **street-recall = {st[0]}/{st[1]} = {pct(st[4])}** "
+                 f"(ของรูปที่ควรเป็น street, route เข้า street ถูกกี่ %)")
+        if street_miss:
+            L.append(f"- ⚠️ **street misroute {len(street_miss)} เคส** (ควร street แต่ไปโหมดอื่น = พลาด hazard):")
+            for fn, p in street_miss:
+                L.append(f"  - `{fn}` → routed **{p}**")
+        else:
+            L.append("- ✅ ไม่มี street misroute (street-recall 100%)")
+    else:
+        L.append("- (ไม่มีตัวอย่าง street ในชุด — เพิ่มก่อนสรุป)")
+
+    if all_miss:
+        L.append("\n## Misroutes ทั้งหมด (true → routed)\n")
+        for fn, t, p in all_miss:
+            L.append(f"- `{fn}`: {t} → **{p}**")
+
+    L.append("\n---\n*reproduce:* `python code/eval_router.py <csv>` · "
+             "risk framing: `docs/risk_analysis.md` (auto = risk amplifier)")
+
+    Path(args.out).write_text("\n".join(L) + "\n", encoding="utf-8")
+    print("\n".join(L))
+    print(f"\nSaved -> {args.out}")
+
+
+if __name__ == "__main__":
+    main()
