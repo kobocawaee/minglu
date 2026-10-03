@@ -669,6 +669,16 @@ def get_lan_ip():
         s.close()
 
 
+def get_tailscale_ip():
+    """[資服版] 有裝 Tailscale 就回傳這台電腦的 100.x.x.x 位址，沒有就回傳 None"""
+    try:
+        r = subprocess.run(["tailscale", "ip", "-4"], capture_output=True, text=True, timeout=5)
+        ip = r.stdout.strip().splitlines()[0] if r.returncode == 0 and r.stdout.strip() else ""
+        return ip or None
+    except Exception:
+        return None
+
+
 def _make_cert_python(cert, key, ip):
     """[資服版] 用 cryptography 套件產生自簽憑證（Windows 通常沒有 openssl 指令）"""
     import datetime
@@ -775,7 +785,10 @@ def main():
         scheme = "https"
 
     print(f"[info] 伺服器已啟動：{scheme}://{ip}:{port}")
-    print(f"       手機在同一個網路時開這個網址；用 Tailscale 時把位址換成 Tailscale 的 100.x.x.x")
+    print(f"       手機和電腦在同一個網路時開這個網址")
+    ts_ip = get_tailscale_ip()
+    if ts_ip:
+        print(f"       手機在外面（用 Tailscale）時開：{scheme}://{ts_ip}:{port}")
     if args.https:
         print("       （自簽憑證：第一次連線按「進階」→「繼續前往」）")
     print("       按 Ctrl+C 停止")
