@@ -196,6 +196,7 @@ PAGE = """<!doctype html>
           <button role="radio">標準</button><button role="radio">大</button><button role="radio">特大</button>
         </div></div>
       <label class="srow" id="vibRow"><span>震動提示</span><input type="checkbox" class="sw" role="switch" data-key="vib" aria-label="震動提示"></label>
+      <label class="srow" id="shakeRow"><span>搖一搖提問<small>不用找按鈕，搖兩下手機就開始聽</small></span><input type="checkbox" class="sw" role="switch" data-key="shake" aria-label="搖一搖提問"></label>
       <div class="sbtns"><button id="resetSet">恢復預設</button><button id="closeSet">完成</button></div>
     </div>
     <div id="offline" role="alert">連不到電腦，正在重新連線…</div>
@@ -272,18 +273,21 @@ setMode(MODE, false);
 const RATES=[0.75, 0.95, 1.2, 1.45], RATE_NAMES=['慢','標準','快','很快'];
 const FONTS=[25, 31, 38], FONT_NAMES=['標準','大','特大'];
 const CAN_VIB=('vibrate' in navigator);           // iPhone 的 Safari 不支援網頁震動
-const DEFAULTS={rate:1, font:0, vib:true};
+const CAN_SHAKE=('DeviceMotionEvent' in window);
+const DEFAULTS={rate:1, font:0, vib:true, shake:true};
 let SET=Object.assign({}, DEFAULTS);
 try{ Object.assign(SET, JSON.parse(localStorage.getItem('settings')||'{}')); }catch(e){}
 const settingsEl=document.getElementById('settings'), gear=document.getElementById('gear');
 const segs={}; document.querySelectorAll('.seg').forEach(s=>segs[s.dataset.key]=s);
-const vibSw=document.querySelector('.sw[data-key="vib"]');
+const vibSw=document.querySelector('.sw[data-key="vib"]'), shakeSw=document.querySelector('.sw[data-key="shake"]');
 if(!CAN_VIB) document.getElementById('vibRow').style.display='none';
+if(!CAN_SHAKE) document.getElementById('shakeRow').style.display='none';
 
 function applySettings(){
   document.documentElement.style.setProperty('--fs', FONTS[SET.font]+'px');
   for(const k in segs) [...segs[k].children].forEach((b,i)=>b.setAttribute('aria-checked', i===SET[k]?'true':'false'));
   vibSw.checked=!!SET.vib;
+  shakeSw.checked=!!SET.shake;
   try{ localStorage.setItem('settings', JSON.stringify(SET)); }catch(e){}
 }
 // 調整設定，回傳要說的話（設定面板和語音指令共用）
@@ -293,6 +297,11 @@ function changeSetting(key, value){
     if(!CAN_VIB) return '這支手機的瀏覽器不支援震動。';
     SET.vib=!!value; applySettings(); if(SET.vib) vibrate(120);
     return SET.vib?'震動已開啟。':'震動已關閉。';
+  }
+  if(key==='shake'){
+    if(!CAN_SHAKE) return '這支手機的瀏覽器不支援搖一搖。';
+    SET.shake=!!value; applySettings(); if(SET.shake) enableMotion();
+    return SET.shake?'搖一搖提問已開啟，搖兩下手機就會開始聽。':'搖一搖提問已關閉。';
   }
   const max=(key==='rate'?RATES:FONTS).length-1, names=key==='rate'?RATE_NAMES:FONT_NAMES;
   const label=key==='rate'?'語速':'字體';
@@ -313,6 +322,7 @@ document.getElementById('closeSet').addEventListener('click', ()=>openSettings(f
 document.getElementById('resetSet').addEventListener('click', ()=>speak(changeSetting('reset')));
 for(const k in segs) [...segs[k].children].forEach((b,i)=>b.addEventListener('click', ()=>speak(changeSetting(k, i))));
 vibSw.addEventListener('change', ()=>speak(changeSetting('vib', vibSw.checked)));
+shakeSw.addEventListener('change', ()=>speak(changeSetting('shake', shakeSw.checked)));
 applySettings();
 
 navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}, width:{ideal:1920}, height:{ideal:1080}}})
@@ -583,9 +593,39 @@ async function sendAsk(audio){
 
 mic.addEventListener('click', ()=>{ firstStart(true); if(rec) stopListen(); else startListen(); });
 
+// ---------------------------------------------------------------------------
+// [資服版] 搖一搖提問：短時間內用力搖兩下 → 開始錄音（一般走路的晃動不會觸發）
+//   iPhone 要先在點擊時取得「動作與方向」權限，所以在第一次點畫面時一併請求
+// ---------------------------------------------------------------------------
+let motionOn=false, jolts=[], lastAcc=null, shakeCooldown=0;
+function enableMotion(){
+  if(motionOn || !CAN_SHAKE) return;
+  const listen=()=>{ if(motionOn) return; motionOn=true; window.addEventListener('devicemotion', onMotion); };
+  if(typeof DeviceMotionEvent.requestPermission==='function'){
+    DeviceMotionEvent.requestPermission().then(s=>{ if(s==='granted') listen(); }).catch(()=>{});
+  }else listen();
+}
+function onMotion(e){
+  const a=e.accelerationIncludingGravity; if(!a || a.x==null) return;
+  if(lastAcc){
+    const d=Math.abs(a.x-lastAcc.x)+Math.abs(a.y-lastAcc.y)+Math.abs(a.z-lastAcc.z);
+    const now=Date.now();
+    if(d>35){ jolts=jolts.filter(t=>now-t<1000); jolts.push(now); }
+    if(jolts.length>=3 && now>shakeCooldown){
+      jolts=[]; shakeCooldown=now+2500;
+      if(SET.shake && started && !rec && !asking) startListen();
+    }
+  }
+  lastAcc={x:a.x, y:a.y, z:a.z};
+}
+
 function firstStart(quiet){
   if(started) return; started=true;
-  keepAwake(); if(!quiet) speak('已就緒，點一下畫面描述，或按下方按鈕用說的。');
+  keepAwake();
+  // 在點擊當下解鎖音效與動作感測，之後搖一搖觸發錄音時才能出聲、收音
+  try{ actx=actx||new (window.AudioContext||window.webkitAudioContext)(); actx.resume(); }catch(e){}
+  if(SET.shake) enableMotion();
+  if(!quiet) speak('已就緒，點一下畫面描述，或按下方按鈕、搖一搖手機用說的。');
 }
 // 錄音中點畫面任何地方 = 結束錄音
 tap.addEventListener('click', ()=>{ firstStart(); if(rec){ stopListen(); return; } describe(); });
