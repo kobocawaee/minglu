@@ -79,6 +79,10 @@ PAGE = """<!doctype html>
            -webkit-backdrop-filter:blur(18px) saturate(1.4); backdrop-filter:blur(18px) saturate(1.4); }
   #dot { flex:none; width:10px; height:10px; border-radius:50%; background:var(--ok); box-shadow:0 0 10px var(--ok); }
   #dot.off { background:#8e8e93; box-shadow:none; }
+  #dot.bad { background:var(--danger); box-shadow:0 0 10px var(--danger); }
+  #offline { display:none; margin-top:10px; padding:10px 16px; border-radius:16px; width:fit-content;
+             background:var(--danger); color:#fff; font-size:17px; font-weight:700; pointer-events:none; }
+  #offline.show { display:block; }
 
   /* 模式：點了才展開的下拉選單 */
   #modeBtn { display:flex; align-items:center; gap:10px; min-height:46px; padding:0 16px 0 14px;
@@ -155,6 +159,7 @@ PAGE = """<!doctype html>
       </button>
       <label id="cont" class="glass">連續<input type="checkbox" id="contChk" role="switch" aria-label="連續模式"></label>
     </div>
+    <div id="offline" role="alert">連不到電腦，正在重新連線…</div>
     <div id="menu" class="glass" role="menu" aria-label="選擇模式">
       <button class="opt" role="menuitemradio" data-mode="auto" data-name="自動"><span>自動<small>依畫面自動判斷</small></span></button>
       <button class="opt" role="menuitemradio" data-mode="street" data-name="過馬路"><span>過馬路<small>行人號誌與車輛</small></span></button>
@@ -185,7 +190,7 @@ const video=document.getElementById('video'), out=document.getElementById('out')
       modeBtn=document.getElementById('modeBtn'), modeNameEl=document.getElementById('modeName'),
       menu=document.getElementById('menu'), scrim=document.getElementById('scrim'),
       mic=document.getElementById('mic'), micText=document.getElementById('micText'),
-      heardEl=document.getElementById('heard');
+      heardEl=document.getElementById('heard'), offlineEl=document.getElementById('offline');
 let busy=false, started=false, wakeLock=null, lastText='';
 
 // [資服版] 語音提問的對話歷史：追問才沿用（由伺服器判斷），點畫面描述、換模式、
@@ -232,6 +237,54 @@ function show(text, opts){
   card.classList.toggle('danger', !!opts.danger);
   timeEl.textContent=opts.time||'';
 }
+
+// ---------------------------------------------------------------------------
+// [資服版] 連線狀態：請求加上逾時，失敗時分清楚是「連不到電腦」還是「電腦太慢／出錯」，
+//   並每 10 秒確認一次連線；斷線、恢復都會用語音告知
+// ---------------------------------------------------------------------------
+let online=true;
+const ERR_TEXT={offline:'連不到電腦，請確認網路，或電腦是否開著。',
+                slow:'電腦回應太慢，請再試一次。',
+                server:'電腦處理時發生錯誤，請再試一次。'};
+function netErr(kind, detail){ const e=new Error(detail||kind); e.kind=kind; return e; }
+async function api(path, body, ms){
+  const ctl=new AbortController(), tm=setTimeout(()=>ctl.abort(), ms);
+  let r;
+  try{
+    r=await fetch(path, {method:'POST', headers:{'Content-Type':'application/json'},
+                         body:JSON.stringify(body), signal:ctl.signal});
+  }catch(e){
+    clearTimeout(tm);
+    if(e.name==='AbortError') throw netErr('slow');
+    setOnline(false, true); throw netErr('offline');
+  }
+  clearTimeout(tm); setOnline(true, true);
+  let j=null; try{ j=await r.json(); }catch(e){}
+  if(!r.ok || !j || j.error){ console.log('server error', j&&j.error); throw netErr('server', j&&j.error); }
+  return j;
+}
+function fail(e){
+  const msg=ERR_TEXT[e.kind]||ERR_TEXT.server;
+  show(msg, {danger:true}); speak(msg); vibrate([400]);
+}
+function setOnline(v, quiet){
+  if(v===online) return;
+  online=v;
+  offlineEl.classList.toggle('show', !v);
+  dot.classList.toggle('bad', !v);
+  if(v){
+    if(!quiet) speak('已重新連上電腦。');
+    if(contChk.checked && !busy && !asking) whenQuiet(describe);     // 斷線時暫停的連續描述接著跑
+  }else if(!quiet){ speak('和電腦的連線中斷了。'); vibrate([400]); }
+}
+async function ping(){
+  if(document.visibilityState!=='visible') return;
+  const ctl=new AbortController(), tm=setTimeout(()=>ctl.abort(), 5000);
+  try{ const r=await fetch('/ping', {cache:'no-store', signal:ctl.signal}); setOnline(r.ok); }
+  catch(e){ setOnline(false); }
+  clearTimeout(tm);
+}
+setInterval(ping, 10000);
 
 async function keepAwake(){ try{ wakeLock=await navigator.wakeLock.request('screen'); }catch(e){} }
 function vibrate(p){ try{ navigator.vibrate&&navigator.vibrate(p); }catch(e){} }
@@ -303,11 +356,7 @@ async function describe(){
   clearConvo();                                   // 點畫面描述 = 開始新話題
   show('辨識中…', {hint:true});
   try{
-    const r=await fetch('/describe',{method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({image:img, mode:MODE})});
-    const j=await r.json();
-    if(j.error) throw new Error(j.error);
+    const j=await api('/describe', {image:img, mode:MODE}, 30000);
     const danger=DANGER.test(j.text);
     // 自動模式回來的「室內模式。」前綴移到標籤上顯示（語音照樣唸完整句子）
     let shown=j.text;
@@ -317,10 +366,11 @@ async function describe(){
     vibrate(danger?[300,120,300,120,300]:[90]);  // อันตราย=สั่นรัว
     lastText=j.text;
     speak(j.text);
-  }catch(e){ show('發生錯誤：'+e.message, {danger:true}); speak('發生錯誤'); vibrate([400]); }
+  }catch(e){ fail(e); }
   card.classList.remove('busy');
   busy=false;
-  if(contChk.checked) setTimeout(()=>{ if(contChk.checked) describe(); }, 1500);
+  // 斷線時不重試（避免一直唸錯誤），等連線恢復再接著跑
+  if(contChk.checked && online) setTimeout(()=>{ if(contChk.checked) describe(); }, 1500);
 }
 
 // ---------------------------------------------------------------------------
@@ -415,10 +465,7 @@ async function sendAsk(audio){
   show('思考中…', {hint:true});
   if(convoAt && Date.now()-convoAt>CONVO_TTL) clearConvo();
   try{
-    const r=await fetch('/ask',{method:'POST', headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({audio:audio, image:grabFrame(), mode:MODE, history:convo})});
-    const j=await r.json();
-    if(j.error) throw new Error(j.error);
+    const j=await api('/ask', {audio:audio, image:grabFrame(), mode:MODE, history:convo}, 40000);
     setHeard(j.heard, j.followup);
     if(j.action==='answer' && !j.gated){            // 追問就接在後面，否則從這題重新開始
       if(!j.followup) convo=[];
@@ -436,7 +483,7 @@ async function sendAsk(audio){
       vibrate(danger?[300,120,300,120,300]:[90]);
       speak(j.text);
     }
-  }catch(e){ show('發生錯誤：'+e.message, {danger:true}); speak('發生錯誤'); vibrate([400]); }
+  }catch(e){ fail(e); }
   card.classList.remove('busy'); setMic(''); asking=false;
   restoreCont();
 }
@@ -473,6 +520,8 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path in ("/", "/index.html"):
             self._send(200, PAGE, "text/html; charset=utf-8")
+        elif self.path == "/ping":            # [資服版] 手機用來確認連線
+            self._send(200, json.dumps({"ok": True}))
         else:
             self._send(404, json.dumps({"error": "not found"}))
 
