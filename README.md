@@ -1,71 +1,70 @@
-# Evaluation code
+# 明路：視障者的繁中隨身視覺助理
 
-Companion to the report and to `datasets_package.zip`. Every number in Section 4
-was produced by a script in here.
+**MingLu: A Traditional-Chinese Visual Assistant for Blind and Low-Vision Users**
 
-This is a snapshot of the working code, not a packaged library: the scripts were
-written to be run from the project root, and they read and write the CSV files in
-the data package. Paths inside them are relative to that root.
+手機當眼睛和喇叭，筆電負責辨識。視障者用自己的手機對著前方，點一下螢幕或直接開口問，就能聽到繁體中文的語音回答。
+所有 AI 模型都是開源模型，部署在使用者自己的電腦上，影像與聲音不交給第三方雲端處理。
 
-## Layout
+![手機操作畫面](docs/screenshots.png)
 
-Two folders, matching the repository. The scripts add the project root to
-`sys.path` and import one another, so the tree has to stay as it is; run them from
-the root, as `python code/eval_ptl.py`.
+## 功能
 
-**`app/`** (18 files) is the deployed assistant of Section 3.6. `pipeline.py`
-turns one frame into speech and is Algorithm 1; the router at the top of the same
-file is Algorithm 3; `street_mode.py` with `light_classifier.py` is Algorithm 2.
-`server.py` is the offline HTTPS server that lets a phone act as camera and
-speaker, `quality.py` the frame-quality gate of Equations 1 to 3.
+- **點畫面描述**：過馬路（行人號誌＋路徑上的車）、周遭環境、室內、讀字、辨識物品、自動選模式
+- **語音提問與追問**：按按鈕或搖兩下手機開口問，例如「現在可以過馬路嗎」「我手上拿的是什麼」，可以接著追問
+- **語音指令**：切換模式、開關連續描述、調整語速與字體（「說慢一點」「字大一點」）
+- **為看不到螢幕的人設計**：點螢幕任何位置即可觸發、危險時紅色警示、斷線時以語音說明
+- **一鍵安裝與啟動**：安裝程式自動完成環境設定；啟動器載入完成後顯示 QR Code，手機一掃即可使用
 
-**`code/`** (41 files), grouped by what they do:
+## 系統架構
 
-- *Measurement* (30): `eval_ptl.py` light discrimination,
-  `eval_robustness.py` the perturbation study, `eval_chair.py` object
-  hallucination, `eval_detector_crosscheck.py` whether a detector can catch a
-  fabrication, `eval_guidedog.py` the external comparison, `eval_object_mode.py`,
-  `eval_router.py` and `run_router_eval.py` routing, `eval_clipscore.py` and
-  `eval_perturbation_magnitude.py` the metric studies of Section 4.5,
-  `score_field_clips.py` and `eval_night_threshold.py` the field clips and the
-  night guard.
-- *Platform and NPU* : `test_smolvlm.py` and `test_directml.py` the CPU and iGPU
-  benchmarks, `bench_*.py` the NPU timing, `quantize_*.py` and
-  `export_vision_static.py` the ONNX work behind Section 4.2,
-  `inspect_onnx.py` the node-placement analysis in Table 3.
-- *Figures* (6): `plot_benchmark.py`, `plot_analysis.py` and
-  `make_thesis_figures.py`, with `figstyle.py` holding the shared palette.
-- *Utilities* (5): subset selection, caption generation, `blur_faces.py`
-  (applied to the field frames before any model saw them), and the builder for
-  the data package.
+各模型各司其職：攸關安全的判斷交給專用模型，視覺語言模型只負責開放式描述與問答，模型輸出經規則檢查後才轉成語音。
 
-## Environment
+![系統架構](docs/architecture.png)
 
-Python 3.10. The main environment uses PyTorch 2.12 (CPU) with Transformers 5.12;
-the DirectML measurements need a separate environment with PyTorch 2.4.1 and
-Transformers 4.49, and the NPU work uses AMD Ryzen AI 1.7.1 with
-onnxruntime-genai. Those three cannot share one environment, which is itself part
-of the deployment-gap finding.
+## 使用的開源模型
 
-Model weights are downloaded from Hugging Face on first run. Nothing here is
-fine-tuned.
+| 模型 | 授權 | 在系統中的角色 |
+|---|---|---|
+| [Gemma 3 4B](https://huggingface.co/google/gemma-3-4b-it)（Google） | [Gemma 使用條款](https://ai.google.dev/gemma/terms) | 周遭、室內、物品的繁中描述；語音問答與追問 |
+| [Whisper large-v3-turbo](https://huggingface.co/openai/whisper-large-v3-turbo)（OpenAI） | MIT | 語音辨識 |
+| [YOLOv8n](https://github.com/ultralytics/ultralytics)（Ultralytics） | AGPL-3.0 | 偵測車輛、行人與號誌；自動選擇模式 |
+| YOLOv8n（本專案以臺灣路口影片微調，`models/pedlight.pt`） | AGPL-3.0 | 辨識臺灣行人號誌的紅燈與綠燈 |
+| [LYTNetV2](https://github.com/samuelyu2002/ImVisible)（ImVisible） | MIT | 判斷行人號誌燈號 |
+| [EasyOCR](https://github.com/JaidedAI/EasyOCR)（JaidedAI） | Apache-2.0 | 讀取繁體中文與英文文字 |
 
-## What is not included
+Gemma 與 Whisper 的模型檔不包含在本倉庫中，安裝時會從 Hugging Face 下載；使用 Gemma 須自行同意其使用條款。
 
-- **Report-production scripts.** Roughly half the repository is python-docx code
-  that edits the manuscript: alt text, equation typesetting, the acmart export,
-  the bibliography. Available if useful, but it is not research code.
-- **Images and video.** The 17 canonical images have mixed licences and the field
-  recordings show identifiable pedestrians. See `DATASETS.md` in the data package.
-- **LYTNetV2 itself.** `app/light_classifier.py` and `code/eval_lytnet.py` import
-  the class and the weights from the ImVisible repository
-  (<https://github.com/samuelyu2002/ImVisible>, MIT). Clone it into `external/`
-  and those two will find it; we did not vendor someone else's model.
-- **University paperwork scripts**, which contain personal administrative detail.
+## 安裝與使用
 
-## Running order, if you want to reproduce a result
+需要 Windows 10／11、NVIDIA 顯示卡（顯示記憶體 8 GB 以上）、Python 3.10～3.12。
 
-1. Fetch the public datasets listed in `DATASETS.md`.
-2. `python code/eval_ptl.py` for the light benchmark, and so on. Each script
-   prints its summary and writes a CSV whose name matches the one in the data
-   package, so its output can be compared directly against ours.
+1. 下載本倉庫，放在路徑較短的資料夾（例如 `C:\明路`）
+2. 雙擊 **`安裝.bat`**，依畫面指示登入 Hugging Face
+3. 雙擊桌面的「視覺助理」，按「啟動」，用手機掃描 QR Code
+
+<img src="docs/launcher.png" width="260" alt="啟動器">
+
+詳細步驟、手機連線方式（含 Tailscale）、語音指令一覽與常見問題，請見 **[README_資服版.md](README_資服版.md)**。
+
+## 專案結構
+
+```
+app/                 系統本體（伺服器、各模式流程、語音、號誌偵測）
+models/pedlight.pt   臺灣行人號誌偵測模型（本專案微調）
+tools/               安裝、打包，以及號誌模型的資料標註與訓練工具
+code/                研究用的評估與效能測試程式（見 README_論文評估程式.md）
+external/ImVisible/  LYTNetV2 模型（MIT，保留原授權）
+launcher.pyw         啟動器
+安裝.bat / 啟動.bat / 打包.bat
+```
+
+## 致謝
+
+本專案以所屬實驗室先前的研究程式為基礎改寫（原研究的評估程式說明見 [README_論文評估程式.md](README_論文評估程式.md)），
+並在此之上完成繁體中文化、語音互動、臺灣行人號誌在地化與部署工具。
+行人號誌分類模型 LYTNetV2 來自 [ImVisible](https://github.com/samuelyu2002/ImVisible)（Yu et al., 2019）。
+
+## 授權
+
+本專案以 **[GNU AGPL-3.0](LICENSE)** 授權釋出（因使用 Ultralytics YOLOv8，其授權為 AGPL-3.0）。
+`external/ImVisible/` 保留其原本的 MIT 授權；各模型依其各自的授權條款使用。
