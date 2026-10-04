@@ -93,8 +93,8 @@ GEMMA_4BIT = True            # 顯示卡用 4-bit 載入（約 3GB）；bf16 約
 # [資服版] 臺灣行人號誌偵測（app/ped_detector.py；模型檔 models/pedlight.pt 不存在時自動停用）
 PED_DETECTOR = True
 PED_IMGSZ = 1536          # 號誌很小，用較大的輸入尺寸
-PED_RED_MIN = 0.45        # 門檻依 results/field_1004 實地測試調整：綠燈要求較高（誤報綠燈最危險）
-PED_GREEN_MIN = 0.60
+PED_RED_MIN = 0.30        # 依 results/field_1004 實地考試（3 個路口 52 張）：紅 13/31、綠 1/21、紅說成綠 0
+PED_GREEN_MIN = 0.60      # 綠燈門檻較高：誤報綠燈最危險
 
 # [資服版] 語音指令／語音提問（app/voice.py）
 ASR_MODEL = "openai/whisper-large-v3-turbo"   # 在筆電上做語音辨識，聲音不送雲端
