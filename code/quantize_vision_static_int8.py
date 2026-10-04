@@ -1,11 +1,11 @@
 """
-quantize_vision_static_int8.py - quantize vision_static[_bN].onnx เป็น INT8
+quantize_vision_static_int8.py - 把 vision_static[_bN].onnx 量化成 INT8
 
-รองรับ batch:
+支援 batch：
     python code/quantize_vision_static_int8.py        # batch 1  -> vision_static_int8.onnx
     python code/quantize_vision_static_int8.py 13      # batch 13 -> vision_static_b13_int8.onnx
 
-config: enable_npu_transformer + include_cle + NonOverflow (ได้ผลดีสุดจาก experiment)
+設定：enable_npu_transformer + include_cle + NonOverflow（實驗中效果最好）
 Env: ryzen-ai-1.7.1
 """
 import os
@@ -23,7 +23,7 @@ from transformers import AutoProcessor
 from quark.onnx import quantize_static, CalibrationDataReader, PowerOfTwoMethod, QuantType
 
 MODEL_ID = "HuggingFaceTB/SmolVLM-256M-Instruct"
-# batch 13 ใช้ 2 รูปพอ (กัน memory), batch 1 ใช้ 3 รูป
+# batch 13 用 2 張圖就夠（避免記憶體不足），batch 1 用 3 張圖
 CALIB_IMAGES = [
     "data/test_images/crosswalk_car.jpg",
     "data/test_images/Indoor_livingroom.jpg",
@@ -32,13 +32,13 @@ CALIB_IMAGES = [
 
 
 class TileCalibReader(CalibrationDataReader):
-    """ป้อน [batch,3,512,512]. batch=1 -> ทีละ tile / batch>1 -> ทั้งสแตก (pad/truncate ให้ครบ batch)"""
+    """輸入 [batch,3,512,512]。batch=1 -> 一次一個 tile／batch>1 -> 整疊（補齊或截斷成 batch 大小）"""
 
     def __init__(self, image_paths, batch):
         self.processor = AutoProcessor.from_pretrained(MODEL_ID)
         self.batch = batch
         self.samples = []
-        imgs = image_paths if batch == 1 else image_paths[:2]  # batch ใหญ่ใช้รูปน้อยกัน mem
+        imgs = image_paths if batch == 1 else image_paths[:2]  # batch 大時少用幾張圖，避免記憶體不足
         for p in imgs:
             if not os.path.exists(p):
                 continue
@@ -50,7 +50,7 @@ class TileCalibReader(CalibrationDataReader):
                 n = pv.shape[0]
                 if n >= batch:
                     stack = pv[:batch]
-                else:  # pad ด้วย tile ซ้ำ ให้ครบ batch
+                else:  # 用重複的 tile 補齊 batch
                     pad = np.repeat(pv[-1:], batch - n, axis=0)
                     stack = np.concatenate([pv, pad], axis=0)
                 self.samples.append({"pixel_values": stack.astype(np.float32)})

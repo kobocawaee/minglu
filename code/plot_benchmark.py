@@ -1,12 +1,12 @@
 """
-สร้างกราฟจาก data/benchmark.csv สำหรับใส่สไลด์/รายงาน
-- fig1: เทียบ SmolVLM-256M vs 500M (latency, out_tokens, prefill/decode) @ best config (le=384)
-- fig2: latency vs resolution ของ 256M (384 vs 512) — โชว์ว่าแบนเพราะ vision_tokens คงที่
-- fig3: เทียบ CPU vs iGPU (DirectML) × 256M/500M — platform 1 vs platform 2
+用 data/benchmark.csv 畫圖，放進簡報／報告
+- fig1：比較 SmolVLM-256M vs 500M（延遲、輸出 token、預填／解碼）@ 最佳設定（le=384）
+- fig2：256M 的延遲 vs 解析度（384 vs 512）— 顯示曲線平坦是因為 vision_tokens 固定
+- fig3：比較 CPU vs iGPU（DirectML）× 256M/500M — 平台 1 vs 平台 2
 
-วิธีรัน:
+執行方式：
     python code/plot_benchmark.py
-ผลลัพธ์เซฟลง results/fig1..fig3 .png
+結果存到 results/fig1..fig3 .png
 """
 
 import re
@@ -27,18 +27,18 @@ ROOT = Path(__file__).resolve().parent.parent
 CSV = ROOT / "data" / "benchmark.csv"
 OUT = ROOT / "results"
 
-# ----- โหลดข้อมูล -----
+# ----- 載入資料 -----
 df = pd.read_csv(CSV)
-df["model_short"] = df["model"].str.extract(r"(SmolVLM-\d+M)")  # ชื่อสั้นไว้ใส่ legend
+df["model_short"] = df["model"].str.extract(r"(SmolVLM-\d+M)")  # 圖例用的短名稱
 
 def short_label(name):
-    """ตัดชื่อไฟล์ให้สั้น + ตัดอักขระที่ไม่ใช่ ascii ออก (กัน font ภาษาไทยเป็นกล่อง)"""
+    """把檔名縮短＋去掉非 ASCII 字元（避免非英文字型顯示成方框）"""
     stem = re.sub(r"[^\x00-\x7F]", "", Path(name).stem)
     return stem[:14]
 
-# ----- แยก batch -----
-# concise config (prompt "two short sentences", le=384) → ใช้เทียบ 256M vs 500M
-# จำกัด device เป็น CPU เดิม (vlm_research) กัน row ของ CPU-t2.4/iGPU มาปน image ซ้ำ
+# ----- 分組 -----
+# 簡潔設定（提示詞 "two short sentences"、le=384）→ 用來比較 256M vs 500M
+# 限定原本的 CPU（vlm_research），避免 CPU-t2.4／iGPU 的資料混進來造成同一張圖重複
 cmp = df[
     df["prompt"].str.contains("two short sentences")
     & (df["longest_edge"] == 384)
@@ -46,14 +46,14 @@ cmp = df[
 ].copy()
 m256 = cmp[cmp["model_short"] == "SmolVLM-256M"].set_index("image")
 m500 = cmp[cmp["model_short"] == "SmolVLM-500M"].set_index("image")
-images = [img for img in m256.index if img in m500.index]  # เฉพาะรูปที่มีทั้ง 2 model
+images = [img for img in m256.index if img in m500.index]  # 只取兩個模型都有的圖
 labels = [short_label(i) for i in images]
 
-# long-prompt sweep ของ 256M (มี 384 + 512) → ใช้ทำ latency vs resolution
+# 256M 的長提示詞掃描（有 384 + 512）→ 用來畫延遲 vs 解析度
 sweep = df[df["prompt"].str.contains("Briefly") & (df["model_short"] == "SmolVLM-256M")].copy()
 
 # =====================================================================
-# FIG 1 — เทียบ 256M vs 500M @ best config (le=384)
+# FIG 1 — 比較 256M vs 500M @ 最佳設定（le=384）
 # =====================================================================
 fig, axes = plt.subplots(2, 2, figsize=(15, 10))
 fig.suptitle("SmolVLM-256M vs 500M @ best config (longest_edge=384, max_new_tokens=50)\n"
@@ -61,9 +61,9 @@ fig.suptitle("SmolVLM-256M vs 500M @ best config (longest_edge=384, max_new_toke
 
 x = range(len(images))
 w = 0.4
-C256, C500 = "#4C9BE8", "#E8744C"  # ฟ้า=256M ส้ม=500M
+C256, C500 = "#4C9BE8", "#E8744C"  # 藍 = 256M，橘 = 500M
 
-# (a) latency รายรูป
+# (a) 每張圖的延遲
 ax = axes[0, 0]
 ax.bar([i - w/2 for i in x], m256.loc[images, "latency_s"], w, label="256M", color=C256)
 ax.bar([i + w/2 for i in x], m500.loc[images, "latency_s"], w, label="500M", color=C500)
@@ -74,7 +74,7 @@ ax.set_xticklabels(labels, rotation=60, ha="right", fontsize=7)
 ax.legend()
 ax.grid(axis="y", alpha=0.3)
 
-# (b) latency เฉลี่ย
+# (b) 平均延遲
 ax = axes[0, 1]
 means = [m256.loc[images, "latency_s"].mean(), m500.loc[images, "latency_s"].mean()]
 bars = ax.bar(["256M", "500M"], means, color=[C256, C500], width=0.5)
@@ -84,7 +84,7 @@ ax.set_title("(b) Average latency")
 ax.set_ylabel("latency (s)")
 ax.grid(axis="y", alpha=0.3)
 
-# (c) out_tokens รายรูป — โชว์ว่า 500M หยุดเองตาม "2 sentences" ส่วน 256M ชน cap 50
+# (c) 每張圖的輸出 token — 顯示 500M 會依「2 sentences」自己停，256M 則碰到上限 50
 ax = axes[1, 0]
 ax.bar([i - w/2 for i in x], m256.loc[images, "out_tokens"], w, label="256M", color=C256)
 ax.bar([i + w/2 for i in x], m500.loc[images, "out_tokens"], w, label="500M", color=C500)
@@ -96,7 +96,7 @@ ax.set_xticklabels(labels, rotation=60, ha="right", fontsize=7)
 ax.legend()
 ax.grid(axis="y", alpha=0.3)
 
-# (d) prefill vs decode (เฉลี่ย, stacked) — prefill เกือบคงที่ ความต่างมาจาก decode
+# (d) 預填 vs 解碼（平均、堆疊）— 預填幾乎固定，差異來自解碼
 ax = axes[1, 1]
 pf = [m256.loc[images, "prefill_s"].mean(), m500.loc[images, "prefill_s"].mean()]
 dec = [means[0] - pf[0], means[1] - pf[1]]
@@ -113,10 +113,10 @@ ax.grid(axis="y", alpha=0.3)
 plt.tight_layout(rect=[0, 0, 1, 0.95])
 f1 = OUT / "fig1_model_comparison.png"
 plt.savefig(f1, dpi=150)
-print(f"เซฟ {f1}")
+print(f"已存 {f1}")
 
 # =====================================================================
-# FIG 2 — latency vs resolution ของ 256M (384 vs 512)
+# FIG 2 — 256M 的延遲 vs 解析度（384 vs 512）
 # =====================================================================
 fig2, (axL, axR) = plt.subplots(1, 2, figsize=(13, 5))
 fig2.suptitle("SmolVLM-256M: latency vs resolution (longest_edge)\n"
@@ -127,7 +127,7 @@ piv_lat = sweep.pivot_table(index="image", columns="longest_edge", values="laten
 piv_tok = sweep.pivot_table(index="image", columns="longest_edge", values="vision_tokens")
 res_cols = sorted(piv_lat.columns)
 
-# ซ้าย: latency เฉลี่ย ต่อ resolution (มี error bar = ช่วงรายรูป)
+# 左：各解析度的平均延遲（誤差線 = 各圖的範圍）
 lat_mean = [piv_lat[c].mean() for c in res_cols]
 lat_std = [piv_lat[c].std() for c in res_cols]
 axL.bar([str(c) for c in res_cols], lat_mean, yerr=lat_std, capsize=6,
@@ -139,7 +139,7 @@ axL.set_xlabel("longest_edge (px)")
 axL.set_ylabel("latency (s)")
 axL.grid(axis="y", alpha=0.3)
 
-# ขวา: vision_tokens ต่อ resolution — อธิบายว่าทำไม latency ถึงแบน
+# 右：各解析度的 vision_tokens — 說明延遲為什麼是平的
 tok_mean = [piv_tok[c].mean() for c in res_cols]
 bars = axR.bar([str(c) for c in res_cols], tok_mean, color="#E8744C", width=0.5)
 for b, v in zip(bars, tok_mean):
@@ -152,25 +152,25 @@ axR.grid(axis="y", alpha=0.3)
 plt.tight_layout(rect=[0, 0, 1, 0.92])
 f2 = OUT / "fig2_latency_vs_resolution.png"
 plt.savefig(f2, dpi=150)
-print(f"เซฟ {f2}")
+print(f"已存 {f2}")
 
-# ----- สรุปตัวเลขลง console -----
-print("\n=== สรุป (เฉลี่ย 17 รูป, le=384, concise config) ===")
+# ----- 在主控台印出數字摘要 -----
+print("\n=== 摘要（17 張圖平均，le=384，簡潔設定）===")
 print(f"256M: latency {means[0]:.2f}s | prefill {pf[0]:.2f}s | decode {dec[0]:.2f}s | "
       f"out {m256.loc[images,'out_tokens'].mean():.0f} tok | RAM {m256.loc[images,'peak_ram_mb'].mean():.0f} MB")
 print(f"500M: latency {means[1]:.2f}s | prefill {pf[1]:.2f}s | decode {dec[1]:.2f}s | "
       f"out {m500.loc[images,'out_tokens'].mean():.0f} tok | RAM {m500.loc[images,'peak_ram_mb'].mean():.0f} MB")
 
 # =====================================================================
-# FIG 3 — CPU vs iGPU (DirectML), เทียบ 256M และ 500M (platform 1 vs 2)
-# ใช้ device CPU-t2.4 vs iGPU (env vlm_dml เดียวกัน → torch version เท่ากัน เทียบแฟร์)
+# FIG 3 — CPU vs iGPU（DirectML），比較 256M 和 500M（平台 1 vs 2）
+# 用 CPU-t2.4 vs iGPU（同一個 vlm_dml 環境 → torch 版本相同，比較公平）
 # =====================================================================
 hw = df[df["device"].isin(["AMD-Ryzen-CPU-t2.4", "AMD-Radeon-iGPU"])].copy()
 if not hw.empty:
     models = ["SmolVLM-256M", "SmolVLM-500M"]
     devs = ["AMD-Ryzen-CPU-t2.4", "AMD-Radeon-iGPU"]
     dev_name = {"AMD-Ryzen-CPU-t2.4": "CPU", "AMD-Radeon-iGPU": "iGPU (DirectML)"}
-    # palette เดียวกับรูปอื่นทั้งเล่ม (code/figstyle.py)
+    # 和論文其他圖相同的配色（code/figstyle.py）
     CCPU, CGPU = figstyle.NAVY, figstyle.TEAL
 
     def avg(metric, model, dev):
@@ -183,7 +183,7 @@ if not hw.empty:
     xm = range(len(models))
     wb = 0.36
 
-    # (a) latency เฉลี่ย
+    # (a) 平均延遲
     cpu_lat = [avg("latency_s", m, devs[0]) for m in models]
     gpu_lat = [avg("latency_s", m, devs[1]) for m in models]
     a1.bar([i - wb/2 for i in xm], cpu_lat, wb, label="CPU", color=CCPU)
@@ -196,7 +196,7 @@ if not hw.empty:
     a1.set_xticks(list(xm)); a1.set_xticklabels(models)
     a1.legend(fontsize=8.5); figstyle.tidy(a1)
 
-    # (b) prefill เฉลี่ย — โชว์ว่า iGPU prefill เกือบคงที่/เร็วกว่ามาก
+    # (b) 平均預填 — 顯示 iGPU 的預填幾乎固定／快很多
     cpu_pf = [avg("prefill_s", m, devs[0]) for m in models]
     gpu_pf = [avg("prefill_s", m, devs[1]) for m in models]
     a2.bar([i - wb/2 for i in xm], cpu_pf, wb, label="CPU", color=CCPU)
@@ -209,7 +209,7 @@ if not hw.empty:
     a2.set_xticks(list(xm)); a2.set_xticklabels(models)
     a2.legend(fontsize=8.5); figstyle.tidy(a2)
 
-    # (c) speedup iGPU/CPU ต่อ model
+    # (c) 各模型的 iGPU/CPU 加速倍數
     speedups = [cpu_lat[i] / gpu_lat[i] if gpu_lat[i] else 0 for i in range(len(models))]
     bars = a3.bar(models, speedups, color=CGPU, width=0.5)
     a3.axhline(1.0, color=figstyle.DANGER, ls="--", lw=1.1, label="break-even (1.0x)")
@@ -222,9 +222,9 @@ if not hw.empty:
     plt.tight_layout(rect=[0, 0, 1, 0.94])
     f3 = OUT / "fig3_cpu_vs_igpu.png"
     plt.savefig(f3, dpi=150)
-    print(f"เซฟ {f3}")
+    print(f"已存 {f3}")
 
-    print("\n=== CPU vs iGPU (เฉลี่ย 17 รูป, le=384) ===")
+    print("\n=== CPU vs iGPU（17 張圖平均，le=384）===")
     for m in models:
         print(f"{m}: CPU lat {avg('latency_s', m, devs[0]):.2f}s (pf {avg('prefill_s', m, devs[0]):.2f}) | "
               f"iGPU lat {avg('latency_s', m, devs[1]):.2f}s (pf {avg('prefill_s', m, devs[1]):.2f}) | "

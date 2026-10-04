@@ -1,14 +1,14 @@
 """
-make_thesis_figures.py — figures สำหรับ finding เด่นของเล่ม (fig7-9)
+make_thesis_figures.py — 論文主要發現的圖（fig7-9）
 ====================================================================
-fig7_ptl_lytnet.png       : bar chart — VLM อ่านไฟไม่ได้ (discrimination≈0) vs LYTNet 90pp
-fig8_robustness_grid.png  : รูปเดียว 6 variants — คำเตือนโผล่แค่ 2/6 (finding 4)
-fig9_hybrid_architecture.png : สถาปัตยกรรม hybrid ของแอป (Methods)
+fig7_ptl_lytnet.png       : 長條圖 — VLM 讀不出號誌（分辨能力≈0）vs LYTNet 90 個百分點
+fig8_robustness_grid.png  : 同一張圖的 6 種變化 — 只有 2/6 出現提醒（發現 4）
+fig9_hybrid_architecture.png : 程式的混合式架構（方法章節）
 
-หลักที่ใช้ (dataviz method): form ตามหน้าที่ข้อมูล, สีตามความหมาย (แดง=false-clear อันตราย),
-direct label ทุกแท่ง (แก้ contrast WARN), ไม่มี dual-axis, palette validate แล้ว
+採用的原則（資料視覺化方法）：依資料用途選圖形、依意義選顏色（紅 = 誤報可通行，危險），
+每根長條直接標數值（解決對比度警告）、不用雙 Y 軸、配色已驗證
 
-รัน (env vlm_research): python code/make_thesis_figures.py
+執行（vlm_research 環境）：python code/make_thesis_figures.py
 """
 
 import sys, csv, textwrap
@@ -26,7 +26,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.patches import FancyBboxPatch, FancyArrowPatch
 
-# palette (จากเด็ค — validate ด้วย dataviz validator แล้ว; เทาใช้เป็น annotation เท่านั้น)
+# 配色（取自簡報 — 已用資料視覺化驗證工具檢查；灰色只用於註記）
 NAVY, TEAL, CYAN, GREEN = "#0E2438", "#12A594", "#2AA6CE", "#1AA35A"
 DANGER, MUTE, LIGHT = "#C2410C", "#51617A", "#F1F4F8"
 plt.rcParams.update({"font.family": "DejaVu Sans", "figure.dpi": 150,
@@ -55,22 +55,22 @@ def fig7_ptl():
             ax.text(b.get_x() + b.get_width() / 2, b.get_height() + 1.5,
                     f"{b.get_height():.0f}%", ha="center", va="bottom",
                     fontsize=9, color=NAVY)
-    # แยกโซน VLM กับ dedicated CNN
+    # 區分 VLM 和專用 CNN 的區塊
     ax.axvline(2.5, color=MUTE, lw=0.8, ls=(0, (4, 4)))
     ax.text(1.0, 112, "general VLMs: discrimination ≈ 0", ha="center",
             fontsize=9, color=MUTE, style="italic")
     ax.text(3.0, 112, "ours (hybrid)", ha="center", fontsize=9, color=TEAL, style="italic")
 
-    # discrimination = ระยะห่างระหว่างแท่ง 2 แท่ง → วาดเป็น "ลูกศรชี้ระยะห่าง" ในกราฟเลย
-    # (rev. 07-22 ตามคอมเมนต์อาจารย์: ตัวหนังสือใต้แกนตกขอบ + อ่านไม่รู้เรื่อง)
-    for i, d in enumerate(disc[:3]):                       # VLM 3 ตัว: ช่องว่างแทบไม่มี
+    # 分辨能力 = 兩根長條之間的差距 → 直接在圖上畫成「標示差距的箭頭」
+    # （rev. 07-22，依指導教授意見：軸下方的文字超出邊界，而且看不懂）
+    for i, d in enumerate(disc[:3]):                       # 3 個 VLM：幾乎沒有差距
         top = max(on_green[i], on_red[i])
         ax.annotate("", xy=(i - w / 2, top + 9), xytext=(i + w / 2, top + 9),
                     arrowprops=dict(arrowstyle="<->", color=MUTE, lw=1.1))
         ax.text(i, top + 11, f"gap {int(round(d * 100)):+d} pp".replace("-", "−"),
                 ha="center", fontsize=9, color=MUTE)
 
-    ax.annotate("", xy=(3.46, on_green[3]), xytext=(3.46, on_red[3]),   # LYTNet: ช่องว่างจริง
+    ax.annotate("", xy=(3.46, on_green[3]), xytext=(3.46, on_red[3]),   # LYTNet：有明顯差距
                 arrowprops=dict(arrowstyle="<->", color=GREEN, lw=2.4))
     ax.text(3.56, (on_green[3] + on_red[3]) / 2, "+90 pp", ha="left", va="center",
             fontsize=12, fontweight="bold", color=GREEN)

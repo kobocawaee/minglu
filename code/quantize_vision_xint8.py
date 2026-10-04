@@ -1,15 +1,15 @@
 """
-quantize_vision_xint8.py — Quark INT8 (XINT8) quantize ของ SmolVLM vision encoder
+quantize_vision_xint8.py — 用 Quark 把 SmolVLM 視覺編碼器量化成 INT8（XINT8）
 
-XINT8 = symmetric INT8 + power-of-two scales, โหมดที่ AMD ทำมาเพื่อ Ryzen AI NPU โดยเฉพาะ
-(VitisAI EP รับ INT8 model นี้ไปวางบน NPU)
+XINT8 = 對稱 INT8 + 2 的次方縮放，是 AMD 專為 Ryzen AI NPU 設計的模式
+（VitisAI EP 會把這個 INT8 模型放到 NPU 上執行）
 
 flow:
   vision_encoder.onnx (fp32, 374MB)
-    --[Quark XINT8 + calibration รูปจริง]-->
-  vision_encoder_xint8.onnx (INT8, เล็กลง ~4x)
+    --[Quark XINT8 + 用真實圖片校準]-->
+  vision_encoder_xint8.onnx（INT8，約小 4 倍）
 
-Usage (ต้องอยู่ใน env ryzen-ai-1.7.1):
+Usage（必須在 ryzen-ai-1.7.1 環境中）：
     python code/quantize_vision_xint8.py
 
 Env: ryzen-ai-1.7.1 (quark 0.11rc1)
@@ -33,7 +33,7 @@ MODEL_ID = "HuggingFaceTB/SmolVLM-256M-Instruct"
 ONNX_IN = "models/smolvlm256m_onnx/onnx/vision_encoder.onnx"
 ONNX_OUT = "models/smolvlm256m_onnx/onnx/vision_encoder_xint8.onnx"
 
-# calibration: เลือก 5 รูปคลุม 3 use case (street / indoor / outdoor walkway)
+# 校準：選 5 張圖涵蓋 3 種使用情境（街道／室內／戶外步道）
 CALIB_IMAGES = [
     "data/test_images/crosswalk_car.jpg",
     "data/test_images/crosswalk_greenlight.jpg",
@@ -44,11 +44,11 @@ CALIB_IMAGES = [
 
 
 class VisionCalibReader(CalibrationDataReader):
-    """ป้อน pixel_values + pixel_attention_mask ทีละ 1 tile (กัน OOM)
+    """一次餵一個 tile 的 pixel_values + pixel_attention_mask（避免記憶體不足）
 
-    vision encoder เข้ารหัสแต่ละ tile อิสระกัน (ไม่มี cross-tile attention) ป้อนทีละ tile
-    ให้ค่า calibration เหมือนป้อนทั้ง batch พร้อมกัน แต่หน่วยความจำต่อ sample ลดลง ~13x.
-    (batch=13 ทำให้ softmax attention tensor = 13*12*1024*1024*4B = 654MB/layer สะสมจน OOM)
+    視覺編碼器各個 tile 獨立編碼（沒有跨 tile 的 attention），一次餵一個 tile
+    得到的校準值和整批一起餵相同，但每個樣本的記憶體用量少約 13 倍。
+    （batch=13 會讓 softmax attention 張量 = 13*12*1024*1024*4B = 每層 654MB，累積到記憶體不足）
     """
 
     def __init__(self, image_paths):
@@ -98,7 +98,7 @@ def main():
     reader = VisionCalibReader(CALIB_IMAGES)
     print(f"\ncalibration samples: {len(reader.samples)}\n")
 
-    print("quantizing (XINT8)... [จะรันโมเดลหลายรอบเพื่อ calibrate อาจใช้เวลาหลายนาที]")
+    print("quantizing (XINT8)... [要跑模型好幾次來校準，可能需要好幾分鐘]")
     t0 = time.time()
     quantizer = ModelQuantizer(XINT8_QCONFIG)
     quantizer.quantize_model(ONNX_IN, ONNX_OUT, reader)

@@ -1,17 +1,17 @@
 """
-eval_lytnet.py — validate LYTNetV2 (pretrained) บน PTL subset เดียวกับที่เทสต์ VLM
+eval_lytnet.py — 在和 VLM 測試相同的 PTL 子集上驗證 LYTNetV2（預訓練權重）
 ==================================================================================
-เป้าหมาย: ตาราง apples-to-apples — VLM (discrimination ≈ 0, §5.5.1) vs dedicated CNN
-บนรูปชุดเดียวกัน → หลักฐานปิด loop ของ hybrid argument
+目標：同條件比較的表格 — VLM（分辨能力 ≈ 0，§5.5.1）vs 專用 CNN
+用同一批圖 → 補上混合式架構論點的最後一塊證據
 
-setup ที่ต้องรู้:
-  - โมเดล: LYTNetV2 + weights จาก repo ImVisible (MIT) → clone ไว้ที่ external/ImVisible
-  - ⚠️ input: โค้ด repo บอก 768x576 แต่ V2 จริงมี AvgPool2d(12,9) ที่บังคับ feature ≥12x12
-    → input ต้อง ≥768x768. เราใช้ 1024x768 (คงสัดส่วน 4:3 ของภาพต้นฉบับ 4032x3024)
-  - pixel = float 0-255 ดิบ ไม่ normalize (ตาม dataset.py ของ repo — บรรทัด normalize ถูก comment)
-  - คลาส: red / green / none / countdown_blank / countdown_green (ใช้ index ตาม testing.py)
+需要知道的設定：
+  - 模型：LYTNetV2 + ImVisible repo（MIT）的權重 → clone 到 external/ImVisible
+  - ⚠️ 輸入：repo 程式寫 768x576，但 V2 實際有 AvgPool2d(12,9)，要求特徵圖 ≥12x12
+    → 輸入必須 ≥768x768。我們用 1024x768（保持原圖 4032x3024 的 4:3 比例）
+  - 像素 = 原始 0-255 浮點數，不做正規化（依 repo 的 dataset.py — 正規化那行被註解掉）
+  - 類別：red / green / none / countdown_blank / countdown_green（索引依 testing.py）
 
-รัน:  python code/eval_lytnet.py [--limit-per-class 30] [--out results/lytnet_ptl.csv]
+執行：  python code/eval_lytnet.py [--limit-per-class 30] [--out results/lytnet_ptl.csv]
 """
 
 import sys, os, csv, time, argparse
@@ -94,7 +94,7 @@ def main():
     print(f"n={n}  avg {avg_ms:.0f}ms/img (CPU)")
     print(f"RED   : {stats['red']['ok']}/{stats['red']['n']} correct  | red→green (dangerous false-clear): {stats['red']['as_green']}")
     print(f"GREEN : {stats['green']['ok']}/{stats['green']['n']} correct | green→red (false alarm): {stats['green']['as_red']}")
-    # discrimination แบบเดียวกับ §5.5.1: P(บอกเขียว|เขียว) − P(บอกเขียว|แดง)
+    # 和 §5.5.1 相同的分辨能力：P(說綠|綠) − P(說綠|紅)
     p_g_g = stats["green"]["ok"] / max(stats["green"]["n"], 1)
     p_g_r = stats["red"]["as_green"] / max(stats["red"]["n"], 1)
     print(f"discrimination (say-green on green − say-green on red): {100*(p_g_g - p_g_r):.0f} pp  (VLMs: ~0 pp)")

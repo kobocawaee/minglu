@@ -1,21 +1,21 @@
 """
-eval_clipscore.py — CLIPScore: คำบรรยาย "ยึดโยงกับภาพ" แค่ไหน (advisor request 2026-07-22)
+eval_clipscore.py — CLIPScore：描述和畫面的「對應程度」（指導教授 2026-07-22 的要求）
 ==========================================================================================
-ทำไมต้องมี: Metric B (fabrication) ของเราให้คะแนน "ด้วยมือ" — reviewer วารสารจะถามหา
-metric อัตโนมัติที่วัดเรื่องเดียวกัน. CLIPScore (Hessel et al. 2021) เป็น reference-free
-image–text alignment: ไม่ต้องมี human caption อ้างอิง วัดตรงๆ ว่าข้อความตรงกับภาพไหม
+為什麼需要：我們的指標 B（捏造）是「人工」評分 — 期刊審稿人會要求
+衡量同一件事的自動指標。CLIPScore（Hessel et al. 2021）是不需要參考答案的
+圖文對應指標：不需要人工描述當參考，直接衡量文字和畫面是否相符
 
     CLIPScore(c, v) = 2.5 · max(cos(E_text(c), E_img(v)), 0)
 
-3 คำถามที่สคริปต์นี้ตอบ:
-  A) CLIPScore เฉลี่ยต่อโมเดล — ขนาดโมเดลใหญ่ขึ้น ทำให้คำบรรยายยึดกับภาพมากขึ้นไหม
-  B) ⭐ output ที่เราตีว่า "fabrication" (Metric B = Y) ได้ CLIPScore ต่ำกว่าจริงไหม
-     → ถ้าใช่ CLIPScore ใช้เป็นสัญญาณ hallucination อัตโนมัติได้ + ยืนยัน manual scoring
-  C) VizWiz 45 ใบ: prompt แบบผู้ช่วย (gen_app) vs แบบ caption (gen_caption)
-     → §4.5 พบว่า caption metric ขัดกันเอง; CLIPScore ไม่ต้องใช้ reference จึงตัดสินได้ตรงกว่า
+這支腳本回答 3 個問題：
+  A) 各模型的平均 CLIPScore — 模型變大，描述是否更貼近畫面
+  B) ⭐ 我們判定為「捏造」（指標 B = Y）的輸出，CLIPScore 是否真的比較低
+     → 如果是，CLIPScore 可以當作自動的幻覺訊號＋佐證人工評分
+  C) VizWiz 45 張：助理式提示詞（gen_app）vs 描述式提示詞（gen_caption）
+     → §4.5 發現描述類指標彼此矛盾；CLIPScore 不需要參考答案，判斷更直接
 
-รัน (env vlm_research):  python code/eval_clipscore.py
-output: results/clipscore.csv  (+ สรุปบนจอ)
+執行（vlm_research 環境）：  python code/eval_clipscore.py
+輸出：results/clipscore.csv（＋螢幕上的摘要）
 """
 
 import csv
@@ -34,7 +34,7 @@ SAFETY_CSV = ROOT / "data/safety_eval.csv"
 VIZ_CSV = ROOT / "results/vizwiz_generated.csv"
 OUT = ROOT / "results/clipscore.csv"
 
-W = 2.5  # ตัวคูณมาตรฐานของ CLIPScore (Hessel et al. 2021)
+W = 2.5  # CLIPScore 的標準倍數（Hessel et al. 2021）
 
 
 def load_clip():
@@ -48,12 +48,12 @@ def load_clip():
 
 
 def clip_scores(torch, model, proc, image_paths, texts):
-    """คืน (scores, n_truncated). ประมวลผลทีละใบ — ชุดเล็ก ไม่ต้อง batch"""
+    """回傳 (scores, n_truncated)。一張一張處理 — 資料量小，不需要 batch"""
     from PIL import Image
     scores, truncated = [], 0
     for i, (path, text) in enumerate(zip(image_paths, texts), 1):
         img = Image.open(path).convert("RGB")
-        # CLIP รับ text ได้สูงสุด 77 token — ตัดส่วนเกิน (บันทึกจำนวนไว้รายงานตามจริง)
+        # CLIP 的文字最多 77 個 token — 截掉多的部分（記錄數量，如實報告）
         ids = proc.tokenizer(text, truncation=False)["input_ids"]
         if len(ids) > 77:
             truncated += 1
@@ -71,7 +71,7 @@ def clip_scores(torch, model, proc, image_paths, texts):
 
 
 def permutation_test(a, b, n_perm=20000, seed=42):
-    """ต่างกันจริงหรือบังเอิญ — permutation test สองทาง (ไม่ต้องพึ่ง scipy)"""
+    """差異是真的還是巧合 — 雙尾排列檢定（不依賴 scipy）"""
     rng = np.random.default_rng(seed)
     obs = a.mean() - b.mean()
     pool = np.concatenate([a, b])

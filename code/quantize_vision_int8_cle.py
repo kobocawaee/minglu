@@ -1,13 +1,13 @@
 """
-quantize_vision_int8_cle.py - INT8 re-quantize แบบแก้ถูก (รอบ 2)
+quantize_vision_int8_cle.py - 修正設定後重新量化成 INT8（第 2 輪）
 
-แก้ 2 จุดที่ XINT8_QCONFIG รอบแรกตั้งผิด (ทำให้ cosine -0.52):
-  1. enable_npu_transformer=True  (รอบแรกใช้ enable_npu_cnn=True ผิดโหมด - model เป็น transformer)
-  2. include_cle=True             (รอบแรก False - CLE แก้ outlier/activation range กว้าง)
-+ calibrate_method = PowerOfTwoMethod.NonOverflow (power-of-2 scale สำหรับ NPU + เร็ว ~10 นาที
-  แทน MinMSE 3.5 ชม. - เอาไว้ทดสอบสมมติฐานก่อน ถ้า cosine ดีค่อย refine ด้วย MinMSE)
+修正第一輪 XINT8_QCONFIG 設錯的兩個地方（導致 cosine -0.52）：
+  1. enable_npu_transformer=True  （第一輪用了 enable_npu_cnn=True，模式錯了 - 模型是 transformer）
+  2. include_cle=True             （第一輪是 False - CLE 能處理離群值／activation 範圍過廣）
++ calibrate_method = PowerOfTwoMethod.NonOverflow（給 NPU 的 2 的次方縮放＋快，約 10 分鐘
+  取代 MinMSE 的 3.5 小時 - 先驗證假設，cosine 好的話再用 MinMSE 精修）
 
-INT8 = standard QDQ ops -> โหลดได้บน ORT ธรรมดา (ไม่ต้อง custom_ops.dll แบบ BF16) + เล็ก 4x
+INT8 = 標準 QDQ 運算 -> 一般的 ORT 就能載入（不需要像 BF16 那樣的 custom_ops.dll）＋檔案小 4 倍
 
 Usage (env ryzen-ai-1.7.1):
     python code/quantize_vision_int8_cle.py
@@ -38,7 +38,7 @@ CALIB_IMAGES = [
 
 
 class VisionCalibReader(CalibrationDataReader):
-    """ป้อนทีละ 1 tile กัน OOM (vision encoder ไม่มี cross-tile attention)"""
+    """一次餵一個 tile 避免記憶體不足（視覺編碼器沒有跨 tile 的 attention）"""
 
     def __init__(self, image_paths):
         self.processor = AutoProcessor.from_pretrained(MODEL_ID)
@@ -84,7 +84,7 @@ def main():
     reader = VisionCalibReader(CALIB_IMAGES)
     print(f"calibration samples: {len(reader.samples)}\n")
 
-    print("quantizing INT8 (NonOverflow, เร็ว)...")
+    print("quantizing INT8 (NonOverflow, 快速)...")
     t0 = time.time()
     quantize_static(
         ONNX_IN, ONNX_OUT, reader,
@@ -93,7 +93,7 @@ def main():
         weight_type=QuantType.QInt8,
         enable_npu_transformer=True,
         include_cle=True,
-        per_channel=True,   # v3: แต่ละ channel มี scale ของตัวเอง แก้ outlier channels
+        per_channel=True,   # v3：每個 channel 有自己的縮放，處理離群的 channel
     )
     dt = time.time() - t0
 

@@ -1,18 +1,18 @@
 """
-run_router_eval.py — รัน auto-mode router (app/pipeline.route) บนชุด labeled ~60 รูป
-(คนละตัวกับ code/eval_router.py ของ Aomam ซึ่งเป็นตัว *วิเคราะห์* CSV ที่ไฟล์นี้สร้าง)
+run_router_eval.py — 在約 60 張有標註的圖上執行自動選模式（app/pipeline.route）
+（和 Aomam 的 code/eval_router.py 不同，那支是*分析*這個檔案產生的 CSV）
 
-แผนตาม handoff 07-10 (Aomam confirm แล้ว) — ไม่ต้องถ่ายรูปใหม่ ทุกใบ license สะอาด:
-  street 20      = PTL subset (มุมมองคนเดินที่ทางข้าม -> true=street แน่นอน)  [MIT]
+依 07-10 交接的計畫（Aomam 已確認）— 不用重拍照片，每張圖的授權都沒問題：
+  street 20      = PTL 子集（行人在斑馬線前的視角 -> 正確答案必定是 street）  [MIT]
   indoor 15      = VizWiz candidate scenario=indoor                          [CC BY 4.0]
   surrounding 15 = VizWiz candidate scenario=surrounding                     [CC BY 4.0]
-  object 10      = VizWiz close-up (keyword ที่ script คัด scene ทิ้ง — เลือกกลับมา) [CC BY 4.0]
-หมายเหตุ: read ไม่อยู่ใน eval นี้ (read = manual intent, ไม่ route จากภาพ — ดู app/pipeline.py)
+  object 10      = VizWiz 特寫（腳本原本用關鍵字篩掉的場景 — 這裡挑回來） [CC BY 4.0]
+注意：read 不在這次評估中（read = 使用者手動指定的意圖，不從畫面判斷 — 見 app/pipeline.py）
 
 output: results/router_eval.csv (filename,true_mode,routed_mode,correct)
-        -> วิเคราะห์ต่อ: python code/eval_router.py results/router_eval.csv (script ของ Aomam)
+        -> 接著分析：python code/eval_router.py results/router_eval.csv（Aomam 的腳本）
 
-รัน (env vlm_research): python code/run_router_eval.py
+執行（vlm_research 環境）：python code/run_router_eval.py
 """
 
 import sys, os, csv, json, random
@@ -40,7 +40,7 @@ SEED = 42
 def pick_street(n=20):
     rows = list(csv.DictReader(open(PTL_CSV, encoding="utf-8-sig")))
     rng = random.Random(SEED)
-    # คละคลาสไฟ (แดง/เขียว) ให้หลากหลายฉาก
+    # 號誌類別（紅／綠）混合，讓場景更多樣
     reds = [r for r in rows if r["ptl_class"] == "red"]
     greens = [r for r in rows if r["ptl_class"] == "green"]
     picked = rng.sample(reds, n // 2) + rng.sample(greens, n - n // 2)
@@ -58,7 +58,7 @@ def pick_vizwiz_scenes():
 
 
 def pick_object(n=10):
-    """เลือกรูป close-up จาก val.json (caption มี keyword ของถือได้) + ดึงจาก HF ถ้ายังไม่มี"""
+    """從 val.json 挑特寫圖（描述裡有手持物品的關鍵字）＋還沒有的話從 HF 下載"""
     data = json.load(open(VAL_JSON, encoding="utf-8"))
     id2name = {im["id"]: os.path.basename(im["file_name"]) for im in data["images"]}
     cands = {}
@@ -69,10 +69,10 @@ def pick_object(n=10):
         if any(k in cap for k in CLOSEUP_KW):
             cands.setdefault(a["image_id"], 0)
             cands[a["image_id"]] += 1
-    # เอาเฉพาะรูปที่ >=2 captions บอกว่าเป็นของ close-up (มั่นใจกว่า)
+    # 只取至少 2 則描述都說是特寫物品的圖（比較有把握）
     strong = sorted([i for i, c in cands.items() if c >= 2])
     rng = random.Random(SEED)
-    chosen = rng.sample(strong, min(n * 2, len(strong)))[:n * 2]  # เผื่อดึงไม่เจอ
+    chosen = rng.sample(strong, min(n * 2, len(strong)))[:n * 2]  # 多挑一些，以防下載不到
 
     VIZ_IMGDIR.mkdir(parents=True, exist_ok=True)
     have = [i for i in chosen if (VIZ_IMGDIR / id2name[i]).exists()]

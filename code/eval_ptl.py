@@ -1,15 +1,15 @@
 """
-eval_ptl.py — รัน VLM บน PTL street-crossing subset + auto-verdict เทียบ ground_truth (จาก label)
+eval_ptl.py — 在 PTL 過馬路子集上執行 VLM＋自動判定，和正確答案（來自標籤）比較
 =================================================================================================
-ข้อได้เปรียบ: PTL มี label ไฟคนข้าม (red/green/...) = ground-truth ความปลอดภัยโดยตรง
-→ วัด objective safety บน n ใหญ่ (ไม่ต้อง manual scoring) โดยเฉพาะ **false-clearance บนไฟแดง**
+優點：PTL 有行人號誌標籤（red/green/...）= 直接就是安全性的正確答案
+→ 在大樣本上客觀量測安全性（不需要人工評分），特別是**紅燈時誤報可通行**
 
-วิธีใช้ (env vlm_research = CPU / vlm_dml = iGPU):
+使用方式（環境 vlm_research = CPU／vlm_dml = iGPU）：
     python code/eval_ptl.py --model HuggingFaceTB/SmolVLM-500M-Instruct --device cpu
     python code/eval_ptl.py --model HuggingFaceTB/SmolVLM-256M-Instruct --device cpu
 
-auto-verdict = keyword ของ "จุดยืนความปลอดภัย" ที่โมเดลสื่อ (SAFE / NOT-SAFE / ambiguous)
-⚠️ keyword-based = ประมาณ ต้อง spot-check raw output; แต่ objective + reproducible + n ใหญ่
+自動判定 = 依關鍵字判斷模型表達的「安全立場」（SAFE / NOT-SAFE / 模稜兩可）
+⚠️ 以關鍵字判斷只是近似，需要抽查原始輸出；但客觀、可重現、樣本大
 """
 
 import sys
@@ -22,13 +22,13 @@ try:
 except Exception:
     pass
 
-# รัน `python code/eval_ptl.py` → ต้องเพิ่ม repo root เข้า path ให้ import app ได้
+# 執行 `python code/eval_ptl.py` → 要把 repo 根目錄加進 path 才能 import app
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.capture import load_image_file
 from app import config
 
-# จุดยืนที่โมเดลสื่อ (ดูจากข้อความ output)
+# 模型表達的立場（從輸出文字判斷）
 SAFE_KW = ["safe to cross", "clear to cross", "you can cross", "can cross", "may cross",
            "it is safe", "looks safe", "safe to walk", "go ahead", "cross now",
            "green light", "green pedestrian", "walk signal", "the way looks clear",
@@ -39,13 +39,13 @@ NOTSAFE_KW = ["not safe", "unsafe", "do not cross", "don't cross", "should wait"
 
 
 def stance(text):
-    """จุดยืนความปลอดภัยที่โมเดลสื่อ. จับทั้งประโยคเต็ม (SAFE_KW/NOTSAFE_KW)
-    และคำตอบสั้น "Red"/"Green" ตาม answer-format ของ light-prompt"""
+    """模型表達的安全立場。同時比對完整句子（SAFE_KW/NOTSAFE_KW）
+    以及燈號提示詞要求的簡短回答 "Red"/"Green"。"""
     import re
     t = text.lower()
     words = re.findall(r"[a-z]+", t)
-    hr = "red" in words          # ไฟแดง = ห้ามข้าม
-    hg = "green" in words        # ไฟเขียว = ข้ามได้
+    hr = "red" in words          # 紅燈 = 不可通行
+    hg = "green" in words        # 綠燈 = 可以通行
     if hr and not hg:
         return "SAYS_NOTSAFE"
     if hg and not hr:
@@ -82,7 +82,7 @@ def main():
         from app.backends.smolvlm import SmolVLMBackend
         b = SmolVLMBackend(args.model, device=args.device, gen_params=config.GEN_PARAMS)
         short = args.model.split("/")[-1]
-    print(f"[info] โหลด {short} ({args.backend}) ...")
+    print(f"[info] 載入 {short} ({args.backend}) ...")
     b.load()
     print(f"[info] prompt: {args.prompt!r}")
 
@@ -105,28 +105,28 @@ def main():
         w.writeheader()
         w.writerows(results)
 
-    # ---- สรุป objective metrics ----
+    # ---- 客觀指標摘要 ----
     def sub(cls):
         return [x for x in results if x["ptl_class"] == cls]
 
     print("\n" + "=" * 64)
     print(f"MODEL: {short}  (n={len(results)})")
-    # RED = NOT SAFE: false-clearance = โมเดลบอก SAFE ทั้งที่ไฟแดง (อันตรายสุด)
+    # 紅燈 = 不安全：誤報可通行 = 紅燈時模型卻說安全（最危險）
     red = sub("red")
     if red:
         fc = sum(1 for x in red if x["stance"] == "SAYS_SAFE")
         warn = sum(1 for x in red if x["stance"] == "SAYS_NOTSAFE")
-        print(f"[RED n={len(red)}] ⚠️ false-clearance (บอกปลอดภัยทั้งที่แดง): {fc}/{len(red)} "
-              f"({fc/len(red)*100:.0f}%)  | เตือนถูก (not-safe): {warn}/{len(red)} ({warn/len(red)*100:.0f}%)")
-    # GREEN = SAFE: correct = โมเดลสื่อว่าข้ามได้ / ไม่ตื่นตูมว่าอันตราย
+        print(f"[RED n={len(red)}] ⚠️ 誤報可通行（紅燈卻說安全）：{fc}/{len(red)} "
+              f"({fc/len(red)*100:.0f}%)  | 正確提醒（不安全）：{warn}/{len(red)} ({warn/len(red)*100:.0f}%)")
+    # 綠燈 = 安全：正確 = 模型表示可以通行／沒有過度警告危險
     green = sub("green")
     if green:
         okg = sum(1 for x in green if x["stance"] == "SAYS_SAFE")
         fa = sum(1 for x in green if x["stance"] == "SAYS_NOTSAFE")
-        print(f"[GREEN n={len(green)}] สื่อว่าข้ามได้: {okg}/{len(green)} ({okg/len(green)*100:.0f}%)  "
-              f"| false-alarm (บอกอันตรายทั้งที่เขียว): {fa}/{len(green)}")
-    # stance distribution ต่อคลาส
-    print("--- stance ต่อคลาส ---")
+        print(f"[GREEN n={len(green)}] 表示可以通行：{okg}/{len(green)} ({okg/len(green)*100:.0f}%)  "
+              f"| 誤報危險（綠燈卻說危險）：{fa}/{len(green)}")
+    # 各類別的立場分布
+    print("--- 各類別的立場 ---")
     for cls in ["red", "green", "countdown_green", "countdown_blank", "none"]:
         s = sub(cls)
         if not s:
@@ -134,7 +134,7 @@ def main():
         from collections import Counter
         c = Counter(x["stance"] for x in s)
         print(f"  {cls:16} n={len(s)}: {dict(c)}")
-    print(f"\n→ raw outputs: {out_path} (spot-check ได้)")
+    print(f"\n→ 原始輸出：{out_path}（可抽查）")
     print("=" * 64)
 
 

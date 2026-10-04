@@ -1,8 +1,8 @@
 """
-inspect_onnx.py — ส่องโครงสร้างไฟล์ ONNX (inputs/outputs/op-types/opset)
+inspect_onnx.py — 檢視 ONNX 檔的結構（輸入／輸出／運算類型／opset）
 
-ใช้ดูว่า model graph มี operator อะไรบ้าง เพื่อประเมินว่า VitisAI EP (NPU)
-จะรองรับได้กี่ % ก่อนจะลงทุน quantize จริง
+用來看模型圖裡有哪些運算，以評估 VitisAI EP（NPU）
+能支援幾成，再決定要不要真的投入量化
 
 Usage:
     python code/inspect_onnx.py models/smolvlm256m_onnx/onnx/vision_encoder.onnx
@@ -10,7 +10,7 @@ Usage:
 import sys
 from collections import Counter
 
-# Windows console = cp1252 -> กัน error เวลา print
+# Windows 主控台 = cp1252 -> 避免 print 時出錯
 try:
     sys.stdout.reconfigure(encoding="utf-8")
 except Exception:
@@ -20,13 +20,13 @@ import onnx
 
 
 def tensor_shape(t):
-    """ดึง shape ออกมาเป็น list อ่านง่าย (dim ที่เป็น dynamic จะเป็นชื่อ string)"""
+    """把 shape 取出成好讀的 list（動態維度會是名稱字串）"""
     dims = []
     for d in t.type.tensor_type.shape.dim:
         if d.dim_param:
-            dims.append(d.dim_param)        # dynamic เช่น 'batch', 'seq'
+            dims.append(d.dim_param)        # 動態，例如 'batch'、'seq'
         else:
-            dims.append(d.dim_value)        # static เช่น 3, 512
+            dims.append(d.dim_value)        # 靜態，例如 3、512
     dtype = onnx.TensorProto.DataType.Name(t.type.tensor_type.elem_type)
     return dims, dtype
 
@@ -53,7 +53,7 @@ def main(path):
         dims, dtype = tensor_shape(out)
         print(f"  {out.name:30s} {dtype:10s} {dims}")
 
-    # op-type histogram — หัวใจ: ดูว่ามี operator อะไรบ้าง
+    # 運算類型統計 — 重點：看有哪些運算
     ops = Counter(node.op_type for node in g.node)
     print(f"\n--- OP TYPES ({len(g.node)} nodes, {len(ops)} unique) ---")
     for op, cnt in ops.most_common():

@@ -1,19 +1,19 @@
 """
-eval_perturbation_magnitude.py — "input เปลี่ยนน้อยแค่ไหน" (advisor request 2026-07-22)
+eval_perturbation_magnitude.py — 「輸入到底變了多少」（指導教授 2026-07-22 的要求）
 =========================================================================================
-§4.3 บอกว่า perturbation เบาๆ (หมุน ±4°, สว่าง ±15%, crop 92%) ทำ safety verdict พลิก 40%
-แต่ reviewer แย้งได้ว่า "±4° เบาจริงหรือ — คุณเลือกเอง". สคริปต์นี้ตอบด้วยตัวเลข:
-วัดว่าภาพ *เปลี่ยนไปเท่าไหร่จริง* ด้วย metric มาตรฐาน 3 ระดับ
+§4.3 指出輕微的擾動（旋轉 ±4°、亮度 ±15%、裁切 92%）會讓安全判斷翻轉 40%
+但審稿人可能質疑「±4° 真的算輕微嗎 — 是你自己選的」。這支腳本用數字回答：
+用 3 個層次的標準指標，量測影像*實際改變了多少*
 
-  SSIM      — ระดับโครงสร้างพิกเซล (1.0 = เหมือนกันเป๊ะ) [Wang et al. 2004]
-  LPIPS     — ระดับการรับรู้เชิงลึก (0.0 = เหมือนกันเป๊ะ) [Zhang et al. 2018]
-  CLIP-cos  — ระดับความหมาย: cosine ของ CLIP image embedding (1.0 = เหมือนกันเป๊ะ)
+  SSIM      — 像素結構層次（1.0 = 完全相同）[Wang et al. 2004]
+  LPIPS     — 深度感知層次（0.0 = 完全相同）[Zhang et al. 2018]
+  CLIP-cos  — 語意層次：CLIP 影像 embedding 的 cosine（1.0 = 完全相同）
 
-หมายเหตุ metric ที่อาจารย์เสนอ: LPIPS/SSIM/DINO วัด *ภาพ* ไม่ใช่ *คำบรรยาย* จึงใช้ตอบคำถาม
-"input เปลี่ยนน้อยแค่ไหน" (ไม่ใช่ "คำบรรยายเสถียรไหม" ซึ่งวัดด้วย verdict-flip/Jaccard อยู่แล้ว)
-CLIP-cos ใช้แทนบทบาทของ DINO (semantic feature alignment) โดยใช้โมเดลที่โหลดไว้แล้วจาก CLIPScore
+關於教授建議的指標：LPIPS/SSIM/DINO 衡量的是*影像*而不是*描述*，所以用來回答
+「輸入改變了多少」（不是「描述穩不穩定」，那個已經用判斷翻轉率／Jaccard 衡量）
+CLIP-cos 取代 DINO 的角色（語意特徵對齊），使用 CLIPScore 已經載入的模型
 
-รัน (env vlm_research + pylibs ที่มี lpips/scipy):
+執行（vlm_research 環境＋有 lpips/scipy 的 pylibs）：
     python code/eval_perturbation_magnitude.py
 output: results/perturbation_magnitude.csv
 """
@@ -34,10 +34,10 @@ OUT = ROOT / "results/perturbation_magnitude.csv"
 CLIP_ID = "openai/clip-vit-base-patch32"
 
 
-# ---------------------------------------------------------------- SSIM (ของเราเอง)
+# ---------------------------------------------------------------- SSIM（自己實作）
 def ssim(a: np.ndarray, b: np.ndarray) -> float:
-    """SSIM แบบ global บน grayscale float [0,1] — สูตรมาตรฐาน Wang et al. 2004
-    ใช้ Gaussian window 11x11 sigma 1.5 ผ่าน cv2 (ไม่ต้องพึ่ง skimage)"""
+    """在灰階浮點數 [0,1] 上計算整體 SSIM — Wang et al. 2004 的標準公式
+    用 cv2 做 11x11、sigma 1.5 的高斯視窗（不依賴 skimage）"""
     import cv2
     C1, C2 = (0.01 ** 2), (0.03 ** 2)
     a = a.astype(np.float64); b = b.astype(np.float64)
@@ -57,7 +57,7 @@ def main():
     from PIL import Image
     import lpips as lpips_mod
     from transformers import CLIPModel, CLIPProcessor
-    # ใช้ make_variants ตัวเดียวกับ eval_robustness.py เป๊ะ (ไม่ก๊อปโค้ดซ้ำ กัน drift)
+    # 使用和 eval_robustness.py 完全相同的 make_variants（不複製程式碼，避免兩邊不一致）
     import importlib.util
     spec = importlib.util.spec_from_file_location(
         "evrob", str(Path(__file__).resolve().parent / "eval_robustness.py"))
@@ -72,8 +72,8 @@ def main():
     proc = CLIPProcessor.from_pretrained(CLIP_ID)
 
     def clip_embed(pil):
-        # transformers 5.x: get_image_features คืน output object ไม่ใช่ tensor
-        # → เดินผ่าน vision_model + visual_projection เอง (ได้ image_embeds ตัวเดียวกัน)
+        # transformers 5.x：get_image_features 回傳的是輸出物件而不是 tensor
+        # → 自己走過 vision_model + visual_projection（得到相同的 image_embeds）
         with torch.no_grad():
             vis = clip.vision_model(**proc(images=pil, return_tensors="pt"))
             e = clip.visual_projection(vis.pooler_output)

@@ -1,8 +1,8 @@
 """
 run_vision_npu.py - Stage 4c: run quantized vision encoder on AMD NPU (VitisAI EP)
 
-ตอบคำถามหลัก: VitisAI EP รับ model ได้ไหม + ops ลง NPU จริง (+ เทียบ accuracy vs fp32)
-INT8 (standard QDQ) โหลดบน VitisAI ได้ (ต่างจาก BF16 ที่ติด custom op dll)
+回答主要問題：VitisAI EP 能不能接受這個模型＋運算是否真的落在 NPU（＋和 fp32 比較準確度）
+INT8（標準 QDQ）可以在 VitisAI 上載入（不像 BF16 卡在自訂運算的 dll）
 
 Usage (env ryzen-ai-1.7.1):
     python code/run_vision_npu.py [image_path] [quant_model_path]
@@ -60,7 +60,7 @@ def main(image_path, quant_path):
 
     print("creating VitisAI EP session (NPU)... [first compile may take minutes]")
     so = ort.SessionOptions()
-    so.log_severity_level = 1  # INFO -> เห็น log การ partition ลง NPU
+    so.log_severity_level = 1  # INFO -> 看得到切分到 NPU 的紀錄
     t_create = time.time()
     npu_sess = ort.InferenceSession(
         quant_path, sess_options=so,
@@ -92,7 +92,7 @@ def main(image_path, quant_path):
     else:
         print("  [OK] VitisAI EP active - model loaded on NPU stack")
         print(f"       accuracy vs fp32: cosine={cos:.3f} (refine later)")
-        print("  ดู log ด้านบนหา 'VitisAI' / จำนวน node assigned เพื่อรู้ %ops ลง NPU")
+        print("  看上方紀錄找 'VitisAI'／分配到的節點數，就知道有多少比例的運算落在 NPU")
 
 
 if __name__ == "__main__":

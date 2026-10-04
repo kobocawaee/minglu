@@ -1,19 +1,19 @@
 """
-vizwiz_generate_captions.py — ดึงรูป VizWiz subset + gen captions ส่งให้ Aomam รัน CIDEr/SPICE
+vizwiz_generate_captions.py — 下載 VizWiz 子集的圖片＋產生描述，交給 Aomam 跑 CIDEr/SPICE
 ==============================================================================================
-ขั้นตอน:
-  1. อ่าน candidate manifest (data/vizwiz_subset_candidate.csv จาก script ของ Aomam)
-  2. ดึง "เฉพาะรูปที่เลือก" จาก HuggingFace lmms-lab/VizWiz-Caps (streaming — ไม่โหลด zip 39k)
-     เซฟลง data/vizwiz/images/ (CC BY 4.0 — ใส่ attribution ในเล่มได้)
-  3. รัน SmolVLM-500M 2 แบบต่อรูป:
-       app     = prompt โหมด surrounding ของแอปจริง (วัด "แอปเราทำได้แค่ไหน")
-       caption = prompt caption กลางๆ ("Describe this image in one sentence.")
-                 (แฟร์กว่าเวลาเทียบ CIDEr กับ caption baselines)
-  4. เขียน 2 ไฟล์ให้ Aomam:
+步驟：
+  1. 讀取候選清單（data/vizwiz_subset_candidate.csv，由 Aomam 的腳本產生）
+  2. 從 HuggingFace lmms-lab/VizWiz-Caps 只下載「被選中的圖」（串流 — 不下載 3.9 萬張的 zip）
+     存到 data/vizwiz/images/（CC BY 4.0 — 可以在論文中標註出處）
+  3. 每張圖用 SmolVLM-500M 跑兩種提示詞：
+       app     = 程式實際使用的周遭模式提示詞（衡量「我們的程式做得到多少」）
+       caption = 一般中性的描述提示詞（"Describe this image in one sentence."）
+                 （和描述基準模型比較 CIDEr 時比較公平）
+  4. 寫出兩個檔案給 Aomam：
        results/vizwiz_generated.csv   (filename, scenario, gen_app, gen_caption)
-       results/vizwiz_references.csv  (filename, ref_1..ref_5 — กรอง rejected/precanned แล้ว)
+       results/vizwiz_references.csv  （filename, ref_1..ref_5 — 已過濾 rejected/precanned）
 
-รัน (env vlm_research, ~5-8 นาทีสำหรับ 45 รูป):
+執行（vlm_research 環境，45 張圖約 5-8 分鐘）：
     python code/vizwiz_generate_captions.py
 """
 
@@ -44,9 +44,9 @@ def load_manifest():
 
 
 def fetch_images(wanted: set):
-    """stream จาก HF แล้วเซฟเฉพาะรูปที่อยู่ใน manifest
-    ⚠️ HF lmms-lab/VizWiz-Caps ไม่มี field ชื่อไฟล์ — มีแต่ image_id (ตรงกับ images[].id
-    ใน val.json ทางการ) → สร้าง map id→file_name จาก val.json ก่อน"""
+    """從 HF 串流下載，只存清單中的圖
+    ⚠️ HF 的 lmms-lab/VizWiz-Caps 沒有檔名欄位 — 只有 image_id（對應官方 val.json 的 images[].id）
+    → 先從 val.json 建立 id→file_name 的對照"""
     IMGDIR.mkdir(parents=True, exist_ok=True)
     missing = {w for w in wanted if not (IMGDIR / w).exists()}
     if not missing:
@@ -73,7 +73,7 @@ def fetch_images(wanted: set):
 
 
 def write_references(wanted: set):
-    """อ่าน val.json → ref captions ต่อรูป (กรอง rejected/precanned ตาม protocol ทางการ)"""
+    """讀 val.json → 每張圖的參考描述（依官方規範過濾 rejected/precanned）"""
     data = json.load(open(VAL_JSON, encoding="utf-8"))
     id2name = {im["id"]: os.path.basename(im["file_name"]) for im in data["images"]}
     refs = {}

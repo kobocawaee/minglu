@@ -1,12 +1,12 @@
 """
-export_vision_static.py - export SmolVLM vision encoder เป็น ONNX แบบ STATIC shape
+export_vision_static.py - 把 SmolVLM 視覺編碼器匯出成 STATIC shape 的 ONNX
 
-blocker: Idefics3VisionEmbeddings ใช้ scatter ตาม mask -> NonZero/ScatterND -> NPU crash
-แก้: monkey-patch embeddings เป็น static (position_ids = arange) -> ไม่มี NonZero
+卡關點：Idefics3VisionEmbeddings 依 mask 做 scatter -> NonZero/ScatterND -> NPU 當掉
+解法：monkey-patch embeddings 成 static（position_ids = arange）-> 沒有 NonZero
 
-รองรับ batch size (สำหรับ NPU batching opt):
-    python code/export_vision_static.py        # batch 1 (ทีละ tile) -> vision_static.onnx
-    python code/export_vision_static.py 13      # batch 13 (รวด 1 call) -> vision_static_b13.onnx
+支援 batch 大小（給 NPU batching 最佳化用）：
+    python code/export_vision_static.py        # batch 1（一次一個 tile）-> vision_static.onnx
+    python code/export_vision_static.py 13      # batch 13（一次呼叫全部）-> vision_static_b13.onnx
 
 Env: vlm_research
 """
@@ -29,7 +29,7 @@ OPSET = 17
 
 
 def static_emb_forward(self, pixel_values, patch_attention_mask=None):
-    """static: tile เต็ม -> position_ids = arange(num_patches) (ไม่มี scatter/mask), รองรับทุก batch"""
+    """static：完整 tile -> position_ids = arange(num_patches)（沒有 scatter/mask），支援任何 batch"""
     patch_embeds = self.patch_embedding(pixel_values)
     embeddings = patch_embeds.flatten(2).transpose(1, 2)  # [B, 1024, 768]
     n = embeddings.shape[1]
@@ -73,7 +73,7 @@ def main(batch):
     c = cos(ref_orig, ref_static)
     print(f"patched-static vs original: cosine={c:.6f}")
     if c < 0.99999:
-        print("  [STOP] static forward ไม่ตรง original")
+        print("  [STOP] static forward 和原本的結果不一致")
         return
     print("  [OK] static = original\n")
 

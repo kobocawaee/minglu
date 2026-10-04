@@ -1,19 +1,19 @@
 """
-compare_int8_fp32.py — Sanity check: เทียบ output ของ vision encoder fp32 vs quantized
+compare_int8_fp32.py — 健全性檢查：比較視覺編碼器 fp32 vs 量化後的輸出
 
-ป้อนรูปเดียวกันเข้าทั้ง fp32 และ quantized model แล้ววัดว่า image_features ใกล้กันไหม
-ใช้เทียบได้ทั้ง INT8 และ BF16 (ส่ง path ของ model ที่จะเทียบเป็น arg ที่ 2)
+同一張圖分別餵進 fp32 和量化模型，量測 image_features 有多接近
+INT8 和 BF16 都能比（第 2 個參數傳要比較的模型路徑）
 
-เกณฑ์:
-  cosine > 0.99  = ซื่อสัตย์มาก (ไปต่อ NPU ได้)
-  cosine 0.95-99 = พอรับได้ (ดู text ตอน pipeline อีกที)
-  cosine < 0.95  = น่ากังวล (quantization ทำ output เพี้ยน)
+標準：
+  cosine > 0.99  = 非常忠實（可以繼續上 NPU）
+  cosine 0.95-99 = 可以接受（在完整流程裡再看文字輸出）
+  cosine < 0.95  = 令人擔心（量化讓輸出走樣）
 
 Usage (env ryzen-ai-1.7.1):
     python code/compare_int8_fp32.py [image_path] [quant_model_path]
-    default image = data/sample_indoor.jpg (นอก calibration set)
+    預設圖片 = data/sample_indoor.jpg（不在校準集中）
     default quant = vision_encoder_xint8.onnx
-ตัวอย่างเทียบ bf16:
+比較 bf16 的範例：
     python code/compare_int8_fp32.py data/sample_indoor.jpg models/smolvlm256m_onnx/onnx/vision_encoder_bf16.onnx
 """
 import os
@@ -59,7 +59,7 @@ def run_model(path, feed):
 
 def main(image_path, quant_path):
     qname = os.path.basename(quant_path)
-    print(f"=== FP32 vs {qname} sanity check ===\nimage: {image_path} (นอก calibration set)\n")
+    print(f"=== FP32 vs {qname} sanity check ===\nimage: {image_path} (不在校準集中)\n")
     feed = build_inputs(image_path)
     print(f"input pixel_values: {feed['pixel_values'].shape}\n")
 
@@ -72,7 +72,7 @@ def main(image_path, quant_path):
     print(f"quant output: shape={q.shape}  time={tq:.2f}s")
 
     if f32.shape != q.shape:
-        print("\n[!] shape ไม่ตรงกัน — เทียบไม่ได้")
+        print("\n[!] shape 不一致 — 無法比較")
         return
 
     print(f"\nquant NaN? {np.isnan(q).any()}   Inf? {np.isinf(q).any()}")
@@ -93,15 +93,15 @@ def main(image_path, quant_path):
 
     print(f"\n--- VERDICT ---")
     if np.isnan(q).any() or np.isinf(q).any():
-        print("  [FAIL] quant มี NaN/Inf — quantization พัง")
+        print("  [FAIL] 量化結果有 NaN/Inf — 量化壞掉了")
     elif cos > 0.99:
-        print("  [PASS] cosine > 0.99 — quant ซื่อสัตย์มาก ไปต่อ NPU ได้เลย")
+        print("  [PASS] cosine > 0.99 — 量化非常忠實，可以直接上 NPU")
     elif cos > 0.95:
-        print("  [OK]   cosine 0.95-0.99 — พอรับได้ แต่ควรเช็ก text ตอน pipeline จริง")
+        print("  [OK]   cosine 0.95-0.99 — 可以接受，但應在實際流程中檢查文字輸出")
     else:
-        print("  [WARN] cosine < 0.95 — เพี้ยนเยอะ quantization config ยังไม่เหมาะ")
-    print("\nหมายเหตุ: นี่เทียบ embedding. การพิสูจน์สุดท้ายคือเทียบ 'ข้อความ' ที่ decoder")
-    print("ผลิตจาก quant vs fp32 (ทำตอน pipeline ขั้นถัดไป)")
+        print("  [WARN] cosine < 0.95 — 偏差很大，量化設定還不合適")
+    print("\n注意：這裡比較的是 embedding。最終證明是比較 decoder 產生的「文字」")
+    print("（量化版 vs fp32，在下一階段的流程中進行）")
 
 
 if __name__ == "__main__":

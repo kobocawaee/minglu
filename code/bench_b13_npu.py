@@ -1,8 +1,8 @@
 """
-bench_b13_npu.py - เทียบ latency NPU: batch-13 (1 call) vs per-tile (13 calls)
+bench_b13_npu.py - 比較 NPU 延遲：batch-13（呼叫 1 次）vs 逐 tile（呼叫 13 次）
 
-per-tile เดิม = 13.48s/รูป (overhead ต่อ call x13). batch-13 = 1 call ทั้ง 13 tiles
-ดูว่า overhead หายไปแค่ไหน
+原本逐 tile = 每張圖 13.48 秒（每次呼叫的額外開銷 x13）。batch-13 = 一次呼叫處理全部 13 個 tile
+看額外開銷能省掉多少
 
 Usage (env ryzen-ai-1.7.1):
     python code/bench_b13_npu.py [image_path]
@@ -68,8 +68,8 @@ def main(image_path):
     print(f"  per-tile (13 calls): {t_pertile:.2f}s")
     print(f"  batch-13 (1 call)  : {t_batch:.2f}s")
     if t_batch > 0:
-        print(f"  batching เร็วขึ้น  : {t_pertile/t_batch:.1f}x")
-    print(f"\n  เทียบ iGPU เดิม (~0.75s prefill/รูป) | CPU เดิม (~1.3s)")
+        print(f"  batching 加速  : {t_pertile/t_batch:.1f}x")
+    print(f"\n  對照原本 iGPU（每張預填約 0.75 秒）| 原本 CPU（約 1.3 秒）")
 
 
 if __name__ == "__main__":

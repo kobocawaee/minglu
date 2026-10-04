@@ -1,13 +1,13 @@
 """
-make_gemma_compare.py — สร้างภาพเปรียบเทียบ 500M vs Gemma-4B บนฉากเดียวกัน
+make_gemma_compare.py — 產生 500M 和 Gemma-4B 在同一場景的比較圖
 =========================================================================
-ไว้โชว์ในพรีเซนต์ (แทนการรัน Gemma สด 37 วินาที). สไตล์ navy+teal เหมือนเด็ค
-อ่าน output "จริง" จาก CSV ที่รันไว้ → results/gemma_compare.png
+用於簡報展示（取代現場跑 37 秒的 Gemma）。風格和簡報一樣用深藍＋青綠
+讀取事先跑好存在 CSV 的「真實」輸出 → results/gemma_compare.png
 
-วิธีใช้:
+使用方式：
     conda activate vlm_research
     python code/make_gemma_compare.py
-    python code/make_gemma_compare.py --image "crosswalk_car.jpg"   # เปลี่ยนฉาก
+    python code/make_gemma_compare.py --image "crosswalk_car.jpg"   # 換場景
 """
 import argparse
 import csv

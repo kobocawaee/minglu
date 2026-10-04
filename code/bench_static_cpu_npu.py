@@ -1,5 +1,5 @@
 """
-bench_static_cpu_npu.py - วัด latency static INT8 vision encoder: CPU vs NPU (ทุก tile ของ 1 รูป)
+bench_static_cpu_npu.py - 量測 static INT8 視覺編碼器的延遲：CPU vs NPU（一張圖的所有 tile）
 
 Usage (env ryzen-ai-1.7.1):
     python code/bench_static_cpu_npu.py [image_path]
@@ -59,7 +59,7 @@ def main(image_path):
     print(f"\n--- RESULT (1 image, {tl.shape[0]} tiles) ---")
     print(f"  CPU total: {t_cpu:.2f}s")
     print(f"  NPU total: {t_npu:.2f}s")
-    print(f"  speedup (CPU/NPU): {t_cpu/t_npu:.2f}x  {'(NPU เร็วกว่า)' if t_npu < t_cpu else '(CPU เร็วกว่า!)'}")
+    print(f"  speedup (CPU/NPU): {t_cpu/t_npu:.2f}x  {'(NPU 較快)' if t_npu < t_cpu else '(CPU 較快!)'}")
 
 
 if __name__ == "__main__":

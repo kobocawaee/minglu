@@ -1,8 +1,8 @@
 """
 run_static_npu.py - Stage 4c (retry): run STATIC vision encoder INT8 on NPU (VitisAI EP)
 
-static model ไม่มี NonZero แล้ว -> ลุ้นว่า VitisAI compiler ไม่ crash (ต่างจากรอบก่อน)
-ทดสอบ tile เดียว [1,3,512,512] พอ (แค่ดูว่า compile ผ่าน + accuracy)
+static 模型已經沒有 NonZero -> 看看 VitisAI 編譯器這次會不會當掉（和上一輪不同）
+只測一個 tile [1,3,512,512] 就夠了（只看能否編譯＋準確度）
 
 Usage (env ryzen-ai-1.7.1):
     python code/run_static_npu.py [image_path]
@@ -35,7 +35,7 @@ def first_tile(image_path):
     prompt = processor.apply_chat_template(messages, add_generation_prompt=True)
     inputs = processor(text=prompt, images=[img], return_tensors="np")
     pv = inputs["pixel_values"].astype(np.float32)  # [1, num_tiles, 3, 512, 512]
-    return pv[0, 0:1]  # tile แรก [1,3,512,512]
+    return pv[0, 0:1]  # 第一個 tile [1,3,512,512]
 
 
 def main(image_path):
@@ -53,7 +53,7 @@ def main(image_path):
     t0 = time.time()
     npu = ort.InferenceSession(INT8_PATH, sess_options=so,
                                providers=["VitisAIExecutionProvider", "CPUExecutionProvider"])
-    print(f"*** SESSION CREATED in {time.time()-t0:.1f}s (= ไม่ crash!) ***")
+    print(f"*** SESSION CREATED in {time.time()-t0:.1f}s (= 沒有當掉!) ***")
     print(f"providers ACTIVE: {npu.get_providers()}")
 
     npu.run(None, feed)  # warm-up
@@ -67,10 +67,10 @@ def main(image_path):
     print(f"cosine vs fp32: {c:.5f}")
     print("\n--- VERDICT ---")
     if "VitisAIExecutionProvider" in npu.get_providers():
-        print("  [WIN] static INT8 vision encoder โหลด+รันบน VitisAI/NPU ได้ (ไม่ crash)!")
+        print("  [WIN] static INT8 視覺編碼器可以在 VitisAI/NPU 上載入並執行（沒有當掉）!")
         print(f"        accuracy cosine={c:.3f}")
     else:
-        print("  [!] VitisAI ไม่ active - CPU fallback")
+        print("  [!] VitisAI 沒有啟用 - 退回 CPU")
 
 
 if __name__ == "__main__":

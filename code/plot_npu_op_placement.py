@@ -1,11 +1,11 @@
 """
 fig6: NPU op-placement comparison — SmolVLM (ViT) vs Gemma-3-4b
-แสดงว่า compute-heavy ops (MatMul/Softmax/LayerNorm/GELU/Conv) ไปลงที่ device ไหนจริง
-ตัวเลขจาก node-placement log (Mhiu, 2026-06-25) — docs/npu_setup_progress.md, STATUS.md
+顯示運算量大的運算（MatMul/Softmax/LayerNorm/GELU/Conv）實際落在哪個裝置
+數字來自節點配置紀錄（Mhiu, 2026-06-25）— docs/npu_setup_progress.md、STATUS.md
 
-วิธีรัน:
+執行方式：
     python code/plot_npu_op_placement.py
-ผลลัพธ์: results/fig6_npu_op_placement.png
+輸出：results/fig6_npu_op_placement.png
 """
 
 import sys

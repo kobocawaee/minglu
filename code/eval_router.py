@@ -1,17 +1,17 @@
 """
-วิเคราะห์ผล auto-router (mode selection) — confusion matrix + per-mode precision/recall
-+ ⭐ street-recall (สำคัญสุดตาม risk framework: misroute ฉาก street = สืบทอด L4)
+分析自動選模式的結果 — 混淆矩陣＋各模式的精確率／召回率
++ ⭐ 過馬路召回率（依風險框架最重要：把過馬路場景選錯模式 = 繼承 L4 風險）
 
-อินพุต: CSV จาก Mhiu (รัน app/pipeline.route บนชุด labeled ~60 รูป) — คอลัมน์:
-    filename, true_mode, routed_mode   (ชื่อคอลัมน์ปรับได้ด้วย --true-col/--pred-col)
+輸入：Mhiu 產生的 CSV（在約 60 張有標註的圖上執行 app/pipeline.route）— 欄位：
+    filename, true_mode, routed_mode   （欄位名稱可用 --true-col/--pred-col 調整）
 
-วิธีใช้:
+使用方式：
     python code/eval_router.py results/router_output.csv
     python code/eval_router.py results/router_output.csv --true-col label --pred-col routed
-ผล → results/router_eval.md (ตาราง + street-recall + รายการ misroute) + print
+結果 → results/router_eval.md（表格＋過馬路召回率＋選錯的清單）＋ print
 
-⚠️ street-recall = ของรูปที่ *ควรเป็น street* ทั้งหมด ระบบ route เข้า street ถูกกี่ % (recall ของคลาส street)
-   misroute street→อื่น = อันตรายสุด (พลาด hazard ระดับ L4) → list ออกมาให้ตรวจ
+⚠️ 過馬路召回率 = 所有*應該是 street* 的圖中，系統正確選到 street 的比例（street 類別的召回率）
+   street → 其他模式的誤判 = 最危險（漏掉 L4 等級的危險）→ 列出來檢查
 """
 import argparse
 import csv
@@ -63,13 +63,13 @@ def main():
     per = {}
     for m in modes:
         tp = conf[m][m]
-        support = sum(conf[m].values())                     # จริงเป็น m
-        pred_pos = sum(conf[t][m] for t in modes)           # ทำนายเป็น m
+        support = sum(conf[m].values())                     # 實際是 m
+        pred_pos = sum(conf[t][m] for t in modes)           # 預測成 m
         recall = tp / support if support else None
         prec = tp / pred_pos if pred_pos else None
         per[m] = (tp, support, pred_pos, prec, recall)
 
-    # misroutes โดยเฉพาะ street→อื่น
+    # 選錯的情況，特別是 street → 其他
     street_miss = [(fn, p) for fn, t, p in rows if t == "street" and p != "street"]
     all_miss = [(fn, t, p) for fn, t, p in rows if t != p]
 
@@ -100,18 +100,18 @@ def main():
     L.append("\n## ⭐ Street-recall (safety-critical — misroute street inherits L4)\n")
     if st and st[1]:
         L.append(f"- **street-recall = {st[0]}/{st[1]} = {pct(st[4])}** "
-                 f"(ของรูปที่ควรเป็น street, route เข้า street ถูกกี่ %)")
+                 f"（所有應該是 street 的圖中，正確選到 street 的比例）")
         if street_miss:
-            L.append(f"- ⚠️ **street misroute {len(street_miss)} เคส** (ควร street แต่ไปโหมดอื่น = พลาด hazard):")
+            L.append(f"- ⚠️ **street 選錯 {len(street_miss)} 例**（應該是 street 卻選到其他模式 = 漏掉危險）：")
             for fn, p in street_miss:
                 L.append(f"  - `{fn}` → routed **{p}**")
         else:
-            L.append("- ✅ ไม่มี street misroute (street-recall 100%)")
+            L.append("- ✅ 沒有 street 選錯（過馬路召回率 100%）")
     else:
-        L.append("- (ไม่มีตัวอย่าง street ในชุด — เพิ่มก่อนสรุป)")
+        L.append("- （資料中沒有 street 的樣本 — 請先補上再下結論）")
 
     if all_miss:
-        L.append("\n## Misroutes ทั้งหมด (true → routed)\n")
+        L.append("\n## 所有選錯的情況（正確 → 選到）\n")
         for fn, t, p in all_miss:
             L.append(f"- `{fn}`: {t} → **{p}**")
 

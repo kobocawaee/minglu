@@ -1,19 +1,19 @@
 """
-กราฟวิเคราะห์เพิ่มเติม (Aomam) — ต่อยอดจาก results/analysis_cpu_vs_igpu.md
-แยกจาก plot_benchmark.py ของ Mhiu เพื่อไม่ให้ merge ชนกัน
+補充分析圖（Aomam）— 延伸自 results/analysis_cpu_vs_igpu.md
+和 Mhiu 的 plot_benchmark.py 分開，避免合併時衝突
 
-- fig4: RAM trade-off — iGPU เร็วแต่กิน RAM (500M@iGPU เกินงบเครื่อง 8GB)
-        (a) RAM CPU vs iGPU + เส้นอ้างอิง 8GB   (b) latency-vs-RAM trade-off
-- fig5: prompt effect — concise vs verbose (latency + out_tokens) บน CPU 256M
+- fig4：記憶體取捨 — iGPU 較快但吃記憶體（500M@iGPU 超過 8GB 電腦的預算）
+        (a) CPU vs iGPU 記憶體 + 8GB 參考線   (b) 延遲對記憶體的取捨
+- fig5：提示詞的影響 — 簡潔 vs 冗長（延遲 + 輸出 token 數），CPU 256M
 
-วิธีรัน:
+執行方式：
     python code/plot_analysis.py
-ผลลัพธ์เซฟลง results/fig4_ram_tradeoff.png, results/fig5_prompt_effect.png
+結果存到 results/fig4_ram_tradeoff.png、results/fig5_prompt_effect.png
 
-หมายเหตุความแฟร์:
-- เทียบ CPU vs iGPU ใช้ device CPU-t2.4 คู่กับ iGPU (env DirectML เดียวกัน = torch เท่ากัน)
-  ตามเหตุผลเดียวกับ fig3 ของ Mhiu
-- ทุกค่าใช้ concise prompt + le=384 ยกเว้น fig5 ที่ตั้งใจเทียบ prompt
+公平性說明：
+- CPU vs iGPU 的比較用 CPU-t2.4 搭配 iGPU（同一個 DirectML 環境 = torch 版本相同）
+  理由和 Mhiu 的 fig3 相同
+- 所有數值都用簡潔提示詞 + le=384，只有 fig5 刻意比較提示詞
 """
 
 import sys
@@ -37,11 +37,11 @@ df = pd.read_csv(CSV)
 df["model_short"] = df["model"].str.extract(r"(SmolVLM-\d+M)")
 df["is_concise"] = df["prompt"].str.contains("two short sentences")
 
-# palette เดียวกับรูปอื่นทั้งเล่ม (code/figstyle.py) — เดิมเป็นม่วง/เขียว default
+# 和論文其他圖相同的配色（code/figstyle.py）— 原本是預設的紫／綠
 CCPU, CGPU = figstyle.NAVY, figstyle.TEAL
 C256, C500 = figstyle.CYAN, figstyle.DANGER
-RAM_LIMIT_GB = 8.0                  # เครื่อง consumer ทั่วไป (เช่นเครื่อง Aomam)
-USABLE_GB = 6.0                     # งบ RAM ที่ใช้ได้จริงหลังหัก OS/แอป (~2GB)
+RAM_LIMIT_GB = 8.0                  # 一般消費級電腦（例如 Aomam 的電腦）
+USABLE_GB = 6.0                     # 扣掉作業系統／其他程式（約 2GB）後實際可用的記憶體
 
 models = ["SmolVLM-256M", "SmolVLM-500M"]
 devs = ["AMD-Ryzen-CPU-t2.4", "AMD-Radeon-iGPU"]
@@ -63,7 +63,7 @@ figstyle.fig_title(fig4, "Peak memory cost of offloading to the iGPU "
 xm = range(len(models))
 wb = 0.36
 
-# (a) RAM CPU vs iGPU + เส้น 8GB / usable
+# (a) CPU vs iGPU 記憶體 + 8GB／可用量參考線
 cpu_ram = [avg("peak_ram_mb", m, devs[0]) / 1024 for m in models]   # -> GB
 gpu_ram = [avg("peak_ram_mb", m, devs[1]) / 1024 for m in models]
 a1.bar([i - wb/2 for i in xm], cpu_ram, wb, label="CPU", color=CCPU)
@@ -99,10 +99,10 @@ a2.legend(fontsize=8); figstyle.tidy(a2, grid_axis="both")
 plt.tight_layout(rect=[0, 0, 1, 0.94])
 f4 = OUT / "fig4_ram_tradeoff.png"
 plt.savefig(f4, dpi=150)
-print(f"เซฟ {f4}")
+print(f"已存 {f4}")
 
 # =====================================================================
-# FIG 5 — prompt effect (concise vs verbose) บน CPU 256M le=384
+# FIG 5 — 提示詞的影響（簡潔 vs 冗長），CPU 256M le=384
 # =====================================================================
 cpu256 = df[(df["device"] == "AMD-Ryzen-CPU") & (df["model_short"] == "SmolVLM-256M")
             & (df["longest_edge"] == 384)].copy()
@@ -115,7 +115,7 @@ fig5.suptitle("Prompt effect: concise + anti-guess is faster AND safer\n"
               fontsize=13, fontweight="bold")
 
 cats = ["verbose\n(\"Briefly describe...\")", "concise\n(\"two short sentences,\nDo not guess\")"]
-CV, CC = "#C0392B", "#27AE60"   # แดง=verbose เขียว=concise
+CV, CC = "#C0392B", "#27AE60"   # 紅 = 冗長，綠 = 簡潔
 
 # (a) latency
 lat = [verb["latency_s"].mean(), conc["latency_s"].mean()]
@@ -139,9 +139,9 @@ b2.grid(axis="y", alpha=0.3)
 plt.tight_layout(rect=[0, 0, 1, 0.9])
 f5 = OUT / "fig5_prompt_effect.png"
 plt.savefig(f5, dpi=150)
-print(f"เซฟ {f5}")
+print(f"已存 {f5}")
 
-print("\n=== สรุปตัวเลขที่ plot ===")
+print("\n=== 繪圖用的數字摘要 ===")
 for m in models:
     print(f"{m}: CPU {avg('latency_s', m, devs[0]):.2f}s/{avg('peak_ram_mb', m, devs[0])/1024:.1f}GB | "
           f"iGPU {avg('latency_s', m, devs[1]):.2f}s/{avg('peak_ram_mb', m, devs[1])/1024:.1f}GB")

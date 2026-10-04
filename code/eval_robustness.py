@@ -1,18 +1,18 @@
 """
-eval_robustness.py — วัดความเสถียรของคำบรรยายต่อ input perturbation เล็กๆ
+eval_robustness.py — 量測描述在輸入輕微擾動下的穩定度
 =========================================================================
-คำถามวิจัย: โมเดลจิ๋วให้คำตอบ "นิ่ง" แค่ไหน เมื่อ input เปลี่ยนนิดเดียวแบบมือถือสั่นจริง
-(หมุน ±4°, สว่าง ±15%, ครอป 92%) — *ทั้งที่ภาพยังคุณภาพดี (ผ่าน frame-quality gate)*?
+研究問題：當輸入像手機實際晃動那樣只改變一點點時，小模型的回答有多「穩」
+（旋轉 ±4°、亮度 ±15%、裁切 92%）— *而且畫面品質仍然良好（通過畫面品質檢查）*？
 
-decoder เป็น greedy (deterministic) → ถ้าคำตอบเปลี่ยนเมื่อ input ขยับนิดเดียว = ความเปราะ
-ของ *ตัวโมเดล* ต่อ input ไม่ใช่การสุ่ม และไม่ใช่เฟรมแย่ (perturbation ทุกตัวผ่าน gate).
+解碼是貪婪法（結果固定）→ 輸入稍微一動回答就變 = 是*模型本身*對輸入的
+脆弱性，不是隨機性，也不是畫面品質差（所有擾動都通過品質檢查）。
 
-เมตริก:
-  1) Safety-verdict flip rate (รูป crosswalk, street mode) — verdict {safe/not-safe/unsure} พลิกไหม
-  2) Person-mention flip rate (ทั้งชุด, surrounding mode) — "มีคน/ไม่มีคน" พลิกไหม
-  3) Content consistency (word-Jaccard เฉลี่ยทุกคู่ของ variant) — คำอธิบายเหมือนเดิมแค่ไหน
+指標：
+  1) 安全判斷翻轉率（斑馬線圖，過馬路模式）— 判斷 {safe/not-safe/unsure} 有沒有翻轉
+  2) 提到人的翻轉率（全部圖片，周遭模式）—「有人／沒人」有沒有翻轉
+  3) 內容一致性（各變化版本兩兩之間的字詞 Jaccard 平均）— 描述和原本有多像
 
-รัน (env vlm_research หรือ vlm_dml):
+執行（vlm_research 或 vlm_dml 環境）：
     python code/eval_robustness.py --device cpu --out results/robustness
 """
 
@@ -31,12 +31,12 @@ from app.backends import get_backend
 
 
 # ---------------------------------------------------------------------------
-# Perturbations — เลียนแบบมือถือสั่น/แสงเปลี่ยน. deterministic (reproducible).
-# ตั้งใจให้ "เบา" พอที่ความหมายไม่เปลี่ยน + ผ่าน frame-quality gate
+# 擾動 — 模擬手機晃動／光線變化。結果固定（可重現）。
+# 刻意設得「很輕微」，讓意思不變＋能通過畫面品質檢查
 # ---------------------------------------------------------------------------
 def make_variants(img: Image.Image) -> dict:
     w, h = img.size
-    c = int(w * 0.04), int(h * 0.04)   # crop 92% กลางภาพ
+    c = int(w * 0.04), int(h * 0.04)   # 裁切中央 92%
     return {
         "orig":     img,
         "rot+4":    img.rotate(4, resample=Image.BICUBIC, expand=False),
@@ -48,7 +48,7 @@ def make_variants(img: Image.Image) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# ตัวจำแนกคำตอบ (keyword-based, โปร่งใส) — reuse แนวจาก eval_ptl.py
+# 回答分類器（以關鍵字判斷，透明）— 沿用 eval_ptl.py 的做法
 # ---------------------------------------------------------------------------
 _SAFE = re.compile(r"\b(safe to cross|you (can|may) cross|looks clear|way is clear|"
                    r"no vehicles|no cars|clear to cross|safe to walk)\b", re.I)
@@ -65,7 +65,7 @@ def safety_stance(text: str) -> str:
         return "safe"
     if notsafe and not safe:
         return "not-safe"
-    return "unsure"          # ทั้งคู่/ไม่มีเลย = กำกวม
+    return "unsure"          # 兩者都有／都沒有 = 模稜兩可
 
 
 def has_person(text: str) -> bool:
@@ -116,8 +116,8 @@ def main():
     backend.load(); backend.warmup()
 
     os.makedirs(args.out, exist_ok=True)
-    raw_rows = []                    # ทุก output (image,variant,mode,text)
-    per_img = []                     # สรุปต่อรูป
+    raw_rows = []                    # 所有輸出（image, variant, mode, text）
+    per_img = []                     # 每張圖的摘要
 
     for p in imgs:
         is_street = p.name.lower().startswith("crosswalk")
@@ -128,7 +128,7 @@ def main():
         base = Image.open(p).convert("RGB")
         variants = make_variants(base)
 
-        # ยืนยันว่า variant ทุกตัวผ่าน quality gate (แยก finding นี้ออกจากเรื่องเฟรมแย่)
+        # 確認每個變化版本都通過品質檢查（把這個發現和畫面品質差的問題分開）
         gate_pass = sum(quality.assess(im, config.QUALITY)[0] for im in variants.values())
 
         texts, stances, persons = [], [], []
@@ -154,7 +154,7 @@ def main():
         print(f"  {p.name:42s} [{mode:11s}] consist={consistency:.2f} "
               f"stance={'|'.join(stances):28s} person={''.join('P' if x else '-' for x in persons)}{flag}")
 
-    # ---- เขียนไฟล์ ----
+    # ---- 寫出檔案 ----
     raw_csv = os.path.join(args.out, "robustness_raw.csv")
     with open(raw_csv, "w", newline="", encoding="utf-8-sig") as f:
         w = csv.DictWriter(f, fieldnames=["image", "variant", "mode", "text"])
@@ -176,7 +176,7 @@ def main():
     print("\n" + "=" * 64)
     print(f"variants/image = 6 (orig + rot±4, bright±15%, crop92)")
     print(f"quality-gate pass: {total_gate}/{total_var} variants  "
-          f"(perturbation ไม่ได้ทำให้เฟรมแย่ → วัดความเปราะของโมเดลล้วน)")
+          f"（擾動沒有讓畫面變差 → 量到的純粹是模型的脆弱性）")
     print(f"mean content consistency (word-Jaccard, all {len(allr)}): {mean_consist:.3f}")
     print(f"safety-verdict flip rate (street n={len(street)}): {rate(street,'stance_flip'):.0f}%")
     print(f"person-mention flip rate (all n={len(allr)}):      {rate(allr,'person_flip'):.0f}%")

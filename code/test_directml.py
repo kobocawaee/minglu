@@ -1,15 +1,15 @@
 """
-Benchmark SmolVLM บน AMD Radeon iGPU (DirectML) เทียบ CPU — platform ที่ 2
-- รันใน env `vlm_dml` เท่านั้น! (torch 2.4.1 + torch-directml + transformers 4.49)
-  เรียก python ของ env นั้นตรง ๆ: <conda>/envs/vlm_dml/python.exe
-- โหลด model ครั้งเดียว → รันทุกรูปบน CPU ก่อน แล้วย้าย model ไป iGPU รันทุกรูป (ย้าย weight 2 ครั้ง)
-- append ผลลง data/benchmark.csv (schema เดียวกับ test_smolvlm.py) เพื่อทำกราฟ CPU vs iGPU ร่วมกันได้
-  device label: CPU = "AMD-Ryzen-CPU-t2.4" (env เดียวกัน เทียบแฟร์), iGPU = "AMD-Radeon-iGPU"
+在 AMD Radeon iGPU（DirectML）上效能測試 SmolVLM，和 CPU 比較 — 第 2 個平台
+- 只能在 `vlm_dml` 環境執行！（torch 2.4.1 + torch-directml + transformers 4.49）
+  直接呼叫該環境的 python：<conda>/envs/vlm_dml/python.exe
+- 模型只載入一次 → 先在 CPU 跑完所有圖，再把模型移到 iGPU 跑所有圖（權重移動 2 次）
+- 結果附加到 data/benchmark.csv（格式和 test_smolvlm.py 相同），方便一起畫 CPU vs iGPU 的圖
+  裝置標籤：CPU = "AMD-Ryzen-CPU-t2.4"（同一環境，比較公平），iGPU = "AMD-Radeon-iGPU"
 
-วิธีรัน:
+執行方式：
     python code/test_directml.py --image-dir data/test_images
     python code/test_directml.py --image-dir data/test_images --model HuggingFaceTB/SmolVLM-500M-Instruct
-    python code/test_directml.py --skip-cpu          # รันเฉพาะ iGPU
+    python code/test_directml.py --skip-cpu          # 只跑 iGPU
 """
 
 import argparse
@@ -51,18 +51,18 @@ CSV_FIELDS = [
 
 
 def collect_images(image_arg, image_dir_arg):
-    """คืน list ของ (PIL image, ชื่อไฟล์)"""
+    """回傳 (PIL 影像, 檔名) 的 list"""
     if image_dir_arg:
         paths = sorted(p for p in Path(image_dir_arg).iterdir() if p.suffix.lower() in IMAGE_EXTS)
         if not paths:
-            raise SystemExit(f"ไม่พบรูปใน {image_dir_arg}")
+            raise SystemExit(f"在 {image_dir_arg} 找不到圖片")
         return [(Image.open(p).convert("RGB"), p.name) for p in paths]
     p = Path(image_arg)
     return [(Image.open(p).convert("RGB"), p.name)]
 
 
 def build_inputs(processor, image, target_device):
-    """เตรียม input + ตั้ง longest_edge=384 (sweet spot) ให้ตรงกับ benchmark CPU"""
+    """準備輸入＋設定 longest_edge=384（最佳點），和 CPU 的效能測試一致"""
     processor.image_processor.do_image_splitting = True
     processor.image_processor.size = {"longest_edge": LONGEST_EDGE}
     messages = [{"role": "user", "content": [{"type": "image"}, {"type": "text", "text": PROMPT}]}]
@@ -71,7 +71,7 @@ def build_inputs(processor, image, target_device):
 
 
 def run_once(model, processor, image, label, target_device):
-    """generate 1 รูป บน device ที่ model อยู่แล้ว — คืน dict metrics"""
+    """在模型所在的裝置上對 1 張圖產生輸出 — 回傳指標 dict"""
     inputs = build_inputs(processor, image, target_device)
     n_prompt = inputs["input_ids"].shape[1]
 
@@ -101,10 +101,10 @@ def run_once(model, processor, image, label, target_device):
 
 
 def run_all(model, processor, images, label, target_device):
-    """ย้าย model ไป device ครั้งเดียว warm-up แล้ววนทุกรูป"""
+    """把模型移到裝置一次、暖機，然後逐張處理所有圖"""
     print(f"\n=== {label} ===")
     model.to(target_device)
-    # warm-up: ดูดเวลา compile ครั้งแรกของ DirectML ออกไป (ใช้รูปแรก)
+    # 暖機：先把 DirectML 第一次編譯的時間消化掉（用第一張圖）
     with torch.no_grad():
         model.generate(**build_inputs(processor, images[0][0], target_device), max_new_tokens=1)
     results = []
@@ -147,16 +147,16 @@ def main():
     global LONGEST_EDGE, MAX_NEW, PROMPT
     ap = argparse.ArgumentParser()
     ap.add_argument("--image", default=str(DATA_DIR / "sample_indoor.jpg"))
-    ap.add_argument("--image-dir", default=None, help="โฟลเดอร์รูป (วนทุกรูป)")
+    ap.add_argument("--image-dir", default=None, help="圖片資料夾（逐張處理）")
     ap.add_argument("--model", default=DEFAULT_MODEL, help="HuggingFace model id")
-    ap.add_argument("--skip-cpu", action="store_true", help="รันเฉพาะ iGPU")
+    ap.add_argument("--skip-cpu", action="store_true", help="只跑 iGPU")
     ap.add_argument("--longest-edge", type=int, default=LONGEST_EDGE)
     ap.add_argument("--max-new-tokens", type=int, default=MAX_NEW)
     ap.add_argument("--prompt", default=PROMPT)
     ap.add_argument("--csv", default=None, help="path CSV (default data/benchmark.csv)")
     args = ap.parse_args()
 
-    # override ค่าคงที่จาก CLI (สำหรับทดลอง tuning เช่น le=256 + max_new สั้น)
+    # 從命令列覆寫常數（用來實驗調整，例如 le=256 + 較短的 max_new）
     LONGEST_EDGE = args.longest_edge
     MAX_NEW = args.max_new_tokens
     PROMPT = args.prompt
@@ -166,13 +166,13 @@ def main():
     print(f"DirectML device: {torch_directml.device_name(0)}")
 
     images = collect_images(args.image, args.image_dir)
-    print(f"รูปทั้งหมด {len(images)} รูป | model: {args.model}")
+    print(f"共 {len(images)} 張圖 | model: {args.model}")
 
     t0 = time.perf_counter()
     processor = AutoProcessor.from_pretrained(args.model)
     model = AutoModelForImageTextToText.from_pretrained(args.model, torch_dtype=torch.float32)
     model.eval()
-    print(f"โหลด model เสร็จใน {time.perf_counter() - t0:.1f}s")
+    print(f"模型載入完成，用時 {time.perf_counter() - t0:.1f}s")
 
     csv_path = Path(args.csv) if args.csv else DATA_DIR / "benchmark.csv"
     if not args.skip_cpu:
@@ -181,7 +181,7 @@ def main():
     dml_res = run_all(model, processor, images, IGPU_LABEL, dml)
     append_csv(csv_path, IGPU_LABEL, args.model, dml_res)
 
-    # สรุปเฉลี่ย
+    # 平均摘要
     print("\n" + "=" * 60)
     if not args.skip_cpu:
         cpu_lat = sum(r["latency"] for r in cpu_res) / len(cpu_res)
@@ -193,7 +193,7 @@ def main():
     if not args.skip_cpu:
         print(f"iGPU vs CPU latency speedup: {cpu_lat / dml_lat:.2f}x")
     print("=" * 60)
-    print(f"append ผลลง {csv_path}")
+    print(f"結果附加到 {csv_path}")
 
 
 if __name__ == "__main__":

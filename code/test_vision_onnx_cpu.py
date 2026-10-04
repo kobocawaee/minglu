@@ -1,10 +1,10 @@
 """
-test_vision_onnx_cpu.py — ทดสอบ vision_encoder.onnx (SmolVLM-256M) บน CPU
+test_vision_onnx_cpu.py — 在 CPU 上測試 vision_encoder.onnx（SmolVLM-256M）
 
-เป้าหมาย:
-  1. ยืนยันว่า ONNX vision encoder ที่โหลดมา (onnx-community) รันได้จริง
-  2. ดู shape ของ pixel_values ที่ processor สร้าง (ต้องตรงกับ ONNX input 512x512)
-  3. ได้โค้ด preprocessing (รูป -> pixel_values) ที่จะ reuse เป็น calibration data ตอน Quark quantize
+目標：
+  1. 確認下載的 ONNX 視覺編碼器（onnx-community）真的能執行
+  2. 看 processor 產生的 pixel_values 的 shape（要符合 ONNX 輸入 512x512）
+  3. 取得前處理程式（圖片 -> pixel_values），之後 Quark 量化時重複用來產生校準資料
 
 Usage:
     python code/test_vision_onnx_cpu.py [image_path]
@@ -30,11 +30,11 @@ ONNX_PATH = "models/smolvlm256m_onnx/onnx/vision_encoder.onnx"
 
 
 def build_inputs(image_path):
-    """ใช้ AutoProcessor ของ SmolVLM แปลงรูป -> pixel_values + pixel_attention_mask"""
+    """用 SmolVLM 的 AutoProcessor 把圖片轉成 pixel_values + pixel_attention_mask"""
     processor = AutoProcessor.from_pretrained(MODEL_ID)
     img = Image.open(image_path).convert("RGB")
 
-    # สร้าง chat message มาตรฐานของ SmolVLM (มี <image> placeholder)
+    # 建立 SmolVLM 標準的對話訊息（含 <image> 佔位符）
     messages = [{
         "role": "user",
         "content": [
@@ -46,7 +46,7 @@ def build_inputs(image_path):
     inputs = processor(text=prompt, images=[img], return_tensors="np")
 
     pv = inputs["pixel_values"].astype(np.float32)
-    # pixel_attention_mask อาจไม่มี ถ้าไม่มี padding -> สร้าง all-ones
+    # 沒有 padding 時可能沒有 pixel_attention_mask -> 建立全為 1 的遮罩
     if "pixel_attention_mask" in inputs:
         pam = inputs["pixel_attention_mask"].astype(bool)
     else:

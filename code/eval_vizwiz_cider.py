@@ -1,11 +1,11 @@
 """
-รัน pycocoevalcap (CIDEr-D หลัก + BLEU/METEOR/ROUGE/SPICE) บน VizWiz subset
-เทียบ 2 ระบบ: gen_app (prompt โหมด surrounding ของแอป) vs gen_caption (prompt caption กลาง ๆ)
-เทียบกับ human references (ref_1..5, กรอง rejected/precanned แล้ว)
+在 VizWiz 子集上執行 pycocoevalcap（主要看 CIDEr-D，另有 BLEU/METEOR/ROUGE/SPICE）
+比較兩個系統：gen_app（程式周遭模式的提示詞）vs gen_caption（一般中性的描述提示詞）
+對照人工參考答案（ref_1..5，已過濾 rejected/precanned）
 
-รายงาน overall + แยกต่อ scenario (street/indoor/surrounding)
-วิธีใช้:  python code/eval_vizwiz_cider.py   (base anaconda env; ต้องมี Java สำหรับ METEOR/SPICE)
-ผล → results/vizwiz_cider.md
+報告整體結果，以及各情境（street/indoor/surrounding）分開的結果
+使用方式：  python code/eval_vizwiz_cider.py   （base anaconda 環境；METEOR/SPICE 需要 Java）
+結果 → results/vizwiz_cider.md
 """
 import csv
 import sys
@@ -41,7 +41,7 @@ for r in gen_rows:
                           "gen_app": r["gen_app"].strip(),
                           "gen_caption": r["gen_caption"].strip()}
 
-# เฉพาะรูปที่มีทั้ง gen + ref
+# 只取同時有模型輸出和參考答案的圖
 fns = [fn for fn in gen if fn in refs and refs[fn]]
 tok = PTBTokenizer()
 
@@ -72,7 +72,7 @@ def score_subset(field, subset_fns):
     return out
 
 
-# SPICE แยก (ต้อง Stanford CoreNLP — อาจไม่มีในเครื่อง → ข้าม)
+# SPICE 分開跑（需要 Stanford CoreNLP — 電腦上可能沒有 → 略過）
 def try_spice(subset_fns):
     try:
         from pycocoevalcap.spice.spice import Spice
@@ -129,7 +129,7 @@ lines.append(f"\n**SPICE (gen_app, ALL):** {fmt(spice_all)}"
              + ("" if spice_all is not None else "  (skipped — needs Stanford CoreNLP)"))
 
 out_md = ROOT / "results" / "vizwiz_cider.md"
-# ต่อท้ายส่วน prose ที่จะเติมด้านล่าง (เขียนโดย generate + เติมมือ)
+# 接在後面要補的文字段落（由程式產生＋人工補寫）
 (out_md.with_suffix(".auto.md")).write_text("\n".join(lines) + "\n", encoding="utf-8")
 print("\n".join(lines))
 print(f"\nSaved metric tables -> {out_md.with_suffix('.auto.md')}")

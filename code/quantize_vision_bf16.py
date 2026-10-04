@@ -1,11 +1,11 @@
 """
-quantize_vision_bf16.py — Quark BF16 quantize ของ SmolVLM vision encoder
+quantize_vision_bf16.py — 用 Quark 把 SmolVLM 視覺編碼器量化成 BF16
 
-ทำไม BF16: XINT8 (per-tensor INT8 power-of-2) พังกับ SigLIP (cosine -0.52) เพราะ activation
-range กว้าง + outlier. BF16 เป็น float 16-bit (เก็บ exponent เต็ม) → fidelity สูงกว่ามาก
-ควรได้ cosine ~1.0. และ BF16 = cast ตรงๆ ไม่ต้อง MinMSE calibration search → เร็วกว่า INT8 มาก
+為什麼用 BF16：XINT8（逐張量、2 的次方縮放的 INT8）用在 SigLIP 會壞掉（cosine -0.52），因為 activation
+範圍很廣又有離群值。BF16 是 16 位元浮點數（保留完整指數）→ 保真度高很多
+cosine 應該接近 1.0。而且 BF16 = 直接轉型，不需要 MinMSE 校準搜尋 → 比 INT8 快很多
 
-VitisAI EP รับทั้ง INT8 และ BF16 (BF16 ต้อง pre-compile ตอน deploy บน NPU)
+VitisAI EP 同時支援 INT8 和 BF16（BF16 要在部署到 NPU 時預先編譯）
 
 Usage (env ryzen-ai-1.7.1):
     python code/quantize_vision_bf16.py
@@ -28,7 +28,7 @@ MODEL_ID = "HuggingFaceTB/SmolVLM-256M-Instruct"
 ONNX_IN = "models/smolvlm256m_onnx/onnx/vision_encoder.onnx"
 ONNX_OUT = "models/smolvlm256m_onnx/onnx/vision_encoder_bf16.onnx"
 
-# BF16 ใช้ MinMax (เร็ว) + ไม่พึ่ง range เป๊ะ → ใช้แค่ 3 รูปพอ
+# BF16 用 MinMax（快）＋不依賴精確範圍 → 3 張圖就夠
 CALIB_IMAGES = [
     "data/test_images/crosswalk_car.jpg",
     "data/test_images/Indoor_livingroom.jpg",
@@ -37,7 +37,7 @@ CALIB_IMAGES = [
 
 
 class VisionCalibReader(CalibrationDataReader):
-    """ป้อนทีละ 1 tile กัน OOM (เหมือน xint8) — vision encoder ไม่มี cross-tile attention"""
+    """一次餵一個 tile 避免記憶體不足（和 xint8 一樣）— 視覺編碼器沒有跨 tile 的 attention"""
 
     def __init__(self, image_paths):
         self.processor = AutoProcessor.from_pretrained(MODEL_ID)
@@ -80,7 +80,7 @@ class VisionCalibReader(CalibrationDataReader):
 
 def main():
     print("=== Quark BF16 quantization: SmolVLM vision encoder ===\n")
-    print("preparing calibration data (MinMax, เร็ว)...")
+    print("preparing calibration data (MinMax, 快速)...")
     reader = VisionCalibReader(CALIB_IMAGES)
     print(f"calibration samples: {len(reader.samples)}\n")
 
