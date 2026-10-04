@@ -69,8 +69,17 @@ def describe(backend, image):
     dets, (w, h) = detect.detect(image, conf=0.25, classes=_STREET_CLASSES)
     yolo_sees_light = _sees_light(image, dets)
 
+    # [資服版] 白天先用臺灣行人號誌偵測模型；沒偵測到才交回下面原本的 LYTNet 流程
+    #   （訓練資料都是白天，夜間不用它）
+    from app import ped_detector
+    light = None
+    if ped_detector.available() and not _is_night(image):
+        light = ped_detector.phrase(image)
+
     # channel 1: สีไฟ — LYTNet (fallback → VLM ถ้าไม่มี weights)
-    if light_classifier.available():
+    if light is not None:
+        pass
+    elif light_classifier.available():
         night = _is_night(image)
         box_now = any(d["cls"] == "traffic light" for d in dets)
         if night and not box_now:

@@ -15,7 +15,7 @@ import zipfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TOP = os.path.basename(ROOT)                       # zip 裡的最上層資料夾名稱
-EXCLUDE_DIRS = {".venv", "certs", ".git", "__pycache__", "results", ".claude"}
+EXCLUDE_DIRS = {".venv", "certs", ".git", "__pycache__", "results", ".claude", "dataset", "runs"}
 EXCLUDE_EXT = {".pyc", ".pyo", ".log", ".zip"}
 
 
