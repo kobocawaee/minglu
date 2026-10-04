@@ -14,8 +14,11 @@ MESSAGES = {
                         "zh": "行人號誌是紅燈。"},
     "light_green":     {"en": "The light is green.",
                         "zh": "行人號誌是綠燈。"},
+    # [資服版] 中文改成只報證據：臺灣的行人號誌在綠燈期間也會倒數（例如小綠人＋49 秒），
+    #   LYTNet 的「倒數」類別分不出是紅燈還是綠燈在倒數，說「請不要過馬路」會誤導。
+    #   英文維持論文原句（評測腳本靠比對英文句子計分）
     "light_countdown": {"en": "The light is counting down. Do not start crossing.",
-                        "zh": "號誌正在倒數，請不要開始過馬路。"},
+                        "zh": "看到行人號誌正在倒數，但無法確定是紅燈還是綠燈，請再確認。"},
     "light_none":      {"en": "No pedestrian light detected.",
                         "zh": "沒有偵測到行人號誌。"},
     "light_unclear":   {"en": "No clear pedestrian light detected.",
