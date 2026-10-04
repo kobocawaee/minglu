@@ -22,7 +22,7 @@ from PIL import Image, ImageDraw, ImageTk
 ROOT = os.path.dirname(os.path.abspath(__file__))
 PYTHON = os.path.join(ROOT, ".venv", "Scripts", "python.exe")
 ICON = os.path.join(ROOT, "app", "static", "icon-512.png")
-PORT = 8443
+PORT = 8443            # 預設連接埠；不能用時伺服器會自動改用下一個
 COLW = 400            # 內容欄寬，固定住才不會在秀出 QR Code 時跳版
 
 # 配色和手機頁面一致
@@ -220,9 +220,22 @@ class Launcher:
         self.root.destroy()
 
     def port_in_use(self):
-        with socket.socket() as s:
-            s.settimeout(0.3)
-            return s.connect_ex(("127.0.0.1", PORT)) == 0
+        """有沒有「視覺助理伺服器」已經在跑。連接埠被別的程式佔用不算：伺服器會自動改用下一個。"""
+        import ssl
+        import urllib.request
+        ctx = ssl._create_unverified_context()
+        for p in range(PORT, PORT + 20):
+            with socket.socket() as s:
+                s.settimeout(0.2)
+                if s.connect_ex(("127.0.0.1", p)) != 0:
+                    continue
+            try:
+                with urllib.request.urlopen(f"https://127.0.0.1:{p}/ping", timeout=1, context=ctx) as r:
+                    if b'"ok"' in r.read():
+                        return True
+            except Exception:
+                pass
+        return False
 
     # ---------------- 讀取伺服器輸出 ----------------
     def _reader(self, proc):
@@ -251,7 +264,7 @@ class Launcher:
                     if key in line:
                         self.stage = frac
                         self.set_status(text, ACCENT)
-                urls += re.findall(r"https?://[^\s）)]+:%d" % PORT, line)   # 只認伺服器網址，不抓警告裡的連結
+                urls += re.findall(r"https?://[^\s）)/]+:\d+", line)   # 只認「主機:連接埠」的伺服器網址，不抓警告裡的連結
                 if "伺服器已啟動" in line:
                     self.ready = True
                 if "Traceback" in line or "[warn]" in line:

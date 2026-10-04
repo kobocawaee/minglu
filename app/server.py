@@ -834,6 +834,33 @@ def get_lan_ip():
         s.close()
 
 
+class _Server(ThreadingHTTPServer):
+    # http.server 預設開 SO_REUSEADDR：在 Windows 上會讓兩個程式同時綁同一個連接埠也不報錯，
+    # 改成獨佔，連接埠被佔用時才會正確失敗、改試下一個
+    allow_reuse_address = os.name != "nt"
+
+    def server_bind(self):
+        if os.name == "nt" and hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        super().server_bind()
+
+
+def bind_server(host, port, tries=20):
+    """[資服版] 連接埠不能用（被佔用，或被 Windows／Hyper-V 保留而沒有權限）就往後一個一個試。"""
+    last = None
+    for p in range(port, port + tries):
+        try:
+            srv = _Server((host, p), Handler)
+            if p != port:
+                print(f"[info] 改用連接埠 {p}")
+            return srv, p
+        except OSError as e:
+            last = e
+            reason = "被其他程式佔用" if getattr(e, "winerror", None) == 10048 or e.errno == 98 else "沒有權限使用"
+            print(f"[warn] 連接埠 {p} {reason}（{e.strerror or e}），改試 {p + 1}")
+    raise SystemExit(f"[錯誤] 找不到可用的連接埠（試過 {port}～{port + tries - 1}）：{last}")
+
+
 def get_tailscale_ip():
     """[資服版] 有裝 Tailscale 就回傳這台電腦的 100.x.x.x 位址，沒有就回傳 None"""
     try:
@@ -966,7 +993,7 @@ def main():
             print(f"[warn] 語音辨識載入失敗，語音功能關閉：{e}")
 
     ip = args.host if args.host not in ("0.0.0.0", "") else get_lan_ip()
-    srv = ThreadingHTTPServer((args.host, port), Handler)
+    srv, port = bind_server(args.host, port)
     scheme = "http"
     ts = None
     if args.https:
