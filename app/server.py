@@ -961,7 +961,7 @@ def main():
                     help="เปิด TLS (self-signed) เพื่อให้กล้องเปิดได้บนมือถือ")
     ap.add_argument("--certdir", default="certs")
     ap.add_argument("--save-frames", default=None,
-                    help="โฟลเดอร์เซฟเฟรม+output ไว้ debug (เช่น results/live_frames)")
+                    help="把每張畫面和系統說的話存到這個資料夾（例如 results/field_1004）")
     ap.add_argument("--no-quality-gate", action="store_true",
                     help="ปิด frame-quality gate (เบลอ/มืด) — ไว้ demo/test")
     args = ap.parse_args()
@@ -974,7 +974,7 @@ def main():
     if args.save_frames:
         SAVE_DIR = args.save_frames
         os.makedirs(SAVE_DIR, exist_ok=True)
-        print(f"[info] เซฟเฟรม debug → {SAVE_DIR}/")
+        print(f"[info] 會把每張畫面和系統說的話存到：{SAVE_DIR}/")
 
     print(f"[info] 載入模型（{args.backend or config.BACKEND}）...")
     BACKEND = build_backend(backend=args.backend, device=args.device)

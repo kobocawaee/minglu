@@ -1,17 +1,17 @@
 @echo off
-chcp 65001 >nul
-rem è¦–è¦ºåŠ©ç†ï¼šç¬¬ä¸€æ¬¡ä½¿ç”¨å‰é›™æ“Šé€™å€‹æª”æ¡ˆå®‰è£ã€‚å¯ä»¥é‡è¤‡åŸ·è¡Œï¼Œå·²å®Œæˆçš„æ­¥é©Ÿæœƒè·³éŽã€‚
+rem ³o­ÓÀÉ®×¥Î Big5¡]Ác¤¤ Windows ­ì¥Í½s½X¡^Àx¦s¡GUTF-8 ¥[ chcp 65001 ·|Åý©R¥O´£¥Ü¦r¤¸°¸º¸§â¤¤¤å¦æ¤ÁÂ_
+rem µøÄ±§U²z¡G²Ä¤@¦¸¨Ï¥Î«eÂùÀ»³o­ÓÀÉ®×¦w¸Ë¡C¥i¥H­«½Æ°õ¦æ¡A¤w§¹¦¨ªº¨BÆJ·|¸õ¹L¡C
 cd /d "%~dp0"
-title è¦–è¦ºåŠ©ç† å®‰è£ç¨‹å¼
+title µøÄ±§U²z ¦w¸Ëµ{¦¡
 
 echo ============================================================
-echo   è¦–è¦ºåŠ©ç† å®‰è£ç¨‹å¼
-echo   ç¬¬ä¸€æ¬¡å®‰è£è¦ä¸‹è¼‰ç´„ 12 GBï¼Œè¦–ç¶²é€Ÿéœ€è¦åŠå°æ™‚åˆ°ä¸€å°æ™‚ä»¥ä¸Š
-echo   éŽç¨‹ä¸­è«‹ä¸è¦é—œé–‰é€™å€‹è¦–çª—
+echo   µøÄ±§U²z ¦w¸Ëµ{¦¡
+echo   ²Ä¤@¦¸¦w¸Ë­n¤U¸ü¬ù 12 GB¡Aµøºô³t»Ý­n¥b¤p®É¨ì¤@¤p®É¥H¤W
+echo   ¹Lµ{¤¤½Ð¤£­nÃö³¬³o­Óµøµ¡
 echo ============================================================
 echo.
 
-rem ---- æ‰¾ Python 3.10 ~ 3.12 ----
+rem ---- §ä Python 3.10 ~ 3.12 ----
 set "PY="
 for %%v in (3.12 3.11 3.10) do (
   if not defined PY (
@@ -22,31 +22,31 @@ if not defined PY (
   python -c "import sys; sys.exit(0 if (3,10) <= sys.version_info[:2] <= (3,12) else 1)" >nul 2>&1 && set "PY=python"
 )
 if not defined PY (
-  echo [éœ€è¦å…ˆå®‰è£ Python]
-  echo   é€™å°é›»è…¦æ²’æœ‰ Python 3.10 ~ 3.12ã€‚è«‹åˆ°å³å°‡æ‰“é–‹çš„ç¶²é ä¸‹è¼‰ Python 3.12ï¼Œ
-  echo   å®‰è£æ™‚è¨˜å¾—å‹¾é¸ã€ŒAdd python.exe to PATHã€ï¼Œè£å¥½å¾Œå†é›™æ“Šä¸€æ¬¡ å®‰è£.batã€‚
+  echo [»Ý­n¥ý¦w¸Ë Python]
+  echo   ³o¥x¹q¸£¨S¦³ Python 3.10 ~ 3.12¡C½Ð¨ì§Y±N¥´¶}ªººô­¶¤U¸ü Python 3.12¡A
+  echo   ¦w¸Ë®É°O±o¤Ä¿ï¡uAdd python.exe to PATH¡v¡A¸Ë¦n«á¦AÂùÀ»¤@¦¸ ¦w¸Ë.bat¡C
   start "" "https://www.python.org/downloads/release/python-3128/"
   pause
   exit /b 1
 )
-echo [OK] ä½¿ç”¨ Pythonï¼š%PY%
+echo [OK] ¨Ï¥Î Python¡G%PY%
 
-rem ---- è³‡æ–™å¤¾è·¯å¾‘ä¸èƒ½å¤ªé•·ï¼šWindows çš„è·¯å¾‘ä¸Šé™æ˜¯ 260 å­—ï¼Œå¥—ä»¶è£¡æœ‰äº›æª”æ¡ˆè·¯å¾‘å¾ˆæ·± ----
+rem ---- ¸ê®Æ§¨¸ô®|¤£¯à¤Óªø¡GWindows ªº¸ô®|¤W­­¬O 260 ¦r¡A®M¥ó¸Ì¦³¨ÇÀÉ®×¸ô®|«Ü²` ----
 %PY% -c "import os,sys; sys.exit(1 if len(os.getcwd()) > 90 else 0)"
 if errorlevel 1 (
   echo.
-  echo [è³‡æ–™å¤¾è·¯å¾‘å¤ªé•·]
-  echo   ç›®å‰ä½ç½®ï¼š%CD%
-  echo   Windows çš„è·¯å¾‘é•·åº¦æœ‰ä¸Šé™ï¼Œæ”¾åœ¨å¤ªæ·±çš„è³‡æ–™å¤¾æœƒå®‰è£å¤±æ•—ã€‚
-  echo   è«‹æŠŠæ•´å€‹è³‡æ–™å¤¾æ¬åˆ°çŸ­ä¸€é»žçš„åœ°æ–¹ï¼Œä¾‹å¦‚ C:\è¦–è¦ºåŠ©ç† æˆ– D:\è¦–è¦ºåŠ©ç†ï¼Œå†é›™æ“Šä¸€æ¬¡ å®‰è£.batã€‚
+  echo [¸ê®Æ§¨¸ô®|¤Óªø]
+  echo   ¥Ø«e¦ì¸m¡G%CD%
+  echo   Windows ªº¸ô®|ªø«×¦³¤W­­¡A©ñ¦b¤Ó²`ªº¸ê®Æ§¨·|¦w¸Ë¥¢±Ñ¡C
+  echo   ½Ð§â¾ã­Ó¸ê®Æ§¨·h¨ìµu¤@ÂIªº¦a¤è¡A¨Ò¦p C:\µøÄ±§U²z ©Î D:\µøÄ±§U²z¡A¦AÂùÀ»¤@¦¸ ¦w¸Ë.bat¡C
   pause
   exit /b 1
 )
 
-rem ---- å»ºç«‹è™›æ“¬ç’°å¢ƒ ----
+rem ---- «Ø¥ßµêÀÀÀô¹Ò ----
 if not exist ".venv\Scripts\python.exe" (
   echo.
-  echo å»ºç«‹è™›æ“¬ç’°å¢ƒ .venv â€¦
+  echo «Ø¥ßµêÀÀÀô¹Ò .venv ¡K
   %PY% -m venv .venv
   if errorlevel 1 goto :fail
 )
@@ -54,30 +54,30 @@ set "VPY=.venv\Scripts\python.exe"
 "%VPY%" -m pip install --upgrade pip -q
 if errorlevel 1 goto :fail
 
-rem ---- å®‰è£ PyTorchï¼šæœ‰ NVIDIA é¡¯ç¤ºå¡å°±è£ CUDA ç‰ˆ ----
+rem ---- ¦w¸Ë PyTorch¡G¦³ NVIDIA Åã¥Ü¥d´N¸Ë CUDA ª© ----
 "%VPY%" -c "import torch" >nul 2>&1
 if errorlevel 1 (
   echo.
   where nvidia-smi >nul 2>&1
   if errorlevel 1 (
-    echo æ²’æœ‰åµæ¸¬åˆ° NVIDIA é¡¯ç¤ºå¡ï¼Œå®‰è£ CPU ç‰ˆ PyTorch â€¦
+    echo ¨S¦³°»´ú¨ì NVIDIA Åã¥Ü¥d¡A¦w¸Ë CPU ª© PyTorch ¡K
     "%VPY%" -m pip install torch==2.14.1 torchvision==0.29.1
   ) else (
-    echo å®‰è£é¡¯ç¤ºå¡ç‰ˆ PyTorchï¼Œç´„ 3 GB â€¦
+    echo ¦w¸ËÅã¥Ü¥dª© PyTorch¡A¬ù 3 GB ¡K
     "%VPY%" -m pip install torch==2.14.1 torchvision==0.29.1 --index-url https://download.pytorch.org/whl/cu126
   )
   if errorlevel 1 goto :fail
 ) else (
-  echo [OK] PyTorch å·²å®‰è£
+  echo [OK] PyTorch ¤w¦w¸Ë
 )
 
-rem ---- å…¶ä»–å¥—ä»¶ ----
+rem ---- ¨ä¥L®M¥ó ----
 echo.
-echo å®‰è£å…¶ä»–å¥—ä»¶ â€¦
+echo ¦w¸Ë¨ä¥L®M¥ó ¡K
 "%VPY%" -m pip install -r requirements.txt
 if errorlevel 1 goto :fail
 
-rem ---- æ·å¾‘ã€Hugging Face ç™»å…¥ã€ä¸‹è¼‰æ¨¡åž‹ ----
+rem ---- ±¶®|¡BHugging Face µn¤J¡B¤U¸ü¼Ò«¬ ----
 set PYTHONIOENCODING=utf-8
 "%VPY%" tools\setup_helper.py
 echo.
@@ -86,10 +86,10 @@ exit /b 0
 
 :fail
 echo.
-echo [å®‰è£å¤±æ•—] å¸¸è¦‹åŽŸå› ï¼š
-echo   1. ç¶²è·¯ä¸­æ–·ï¼šç¢ºèªç¶²è·¯å¾Œï¼Œå†é›™æ“Šä¸€æ¬¡ å®‰è£.batï¼Œå·²è£å¥½çš„éƒ¨åˆ†æœƒè·³éŽ
-echo   2. ç¡¬ç¢Ÿç©ºé–“ä¸è¶³ï¼šéœ€è¦ç´„ 20 GB
-echo   3. é˜²æ¯’è»Ÿé«”æ“‹ä½ï¼šæš«æ™‚å…è¨±å¾Œå†è©¦ä¸€æ¬¡
-echo å¦‚æžœä¸€ç›´å¤±æ•—ï¼Œè«‹æŠŠé€™å€‹è¦–çª—çš„ç•«é¢æˆªåœ–çµ¦é–‹ç™¼è€…ã€‚
+echo [¦w¸Ë¥¢±Ñ] ±`¨£­ì¦]¡G
+echo   1. ºô¸ô¤¤Â_¡G½T»{ºô¸ô«á¡A¦AÂùÀ»¤@¦¸ ¦w¸Ë.bat¡A¤w¸Ë¦nªº³¡¤À·|¸õ¹L
+echo   2. µwºÐªÅ¶¡¤£¨¬¡G»Ý­n¬ù 20 GB
+echo   3. ¨¾¬r³nÅé¾×¦í¡G¼È®É¤¹³\«á¦A¸Õ¤@¦¸
+echo ¦pªG¤@ª½¥¢±Ñ¡A½Ð§â³o­Óµøµ¡ªºµe­±ºI¹Ïµ¹¶}µoªÌ¡C
 pause
 exit /b 1

@@ -1,8 +1,8 @@
 @echo off
-chcp 65001 >nul
-rem è¦–è¦ºåŠ©ç†ï¼šæ‰“åŒ…æˆä¹¾æ·¨çš„ zipï¼Œå¯ä»¥ç›´æŽ¥çµ¦åˆ¥äººï¼ˆæœƒæŽ’é™¤è™›æ“¬ç’°å¢ƒèˆ‡ç§é‘°ï¼‰
+rem ³o­ÓÀÉ®×¥Î Big5¡]Ác¤¤ Windows ­ì¥Í½s½X¡^Àx¦s¡GUTF-8 ¥[ chcp 65001 ·|Åý©R¥O´£¥Ü¦r¤¸°¸º¸§â¤¤¤å¦æ¤ÁÂ_
+rem µøÄ±§U²z¡G¥´¥]¦¨°®²bªº zip¡A¥i¥Hª½±µµ¹§O¤H¡]·|±Æ°£µêÀÀÀô¹Ò»P¨pÆ_¡^
 cd /d "%~dp0"
-title è¦–è¦ºåŠ©ç† æ‰“åŒ…
+title µøÄ±§U²z ¥´¥]
 
 set "VPY=.venv\Scripts\python.exe"
 if not exist "%VPY%" set "VPY=python"
