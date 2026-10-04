@@ -27,24 +27,24 @@ _PIPER_EN = _PIPER_DIR / "en_US-lessac-medium.onnx"
 
 _CJK = re.compile(r"[㐀-鿿豈-﫿]")
 _HAS_DIGIT_OR_CJK = re.compile(r"[㐀-鿿豈-﫿0-9]")
-# EN run = ต้องมี "คำละติน" จริง (อักษร A-Z + ช่องว่าง/ขีด/apostrophe ภายใน) เท่านั้น
-# เครื่องหมาย /（）： และตัวเลข "ไม่ใช่" เหตุให้สลับไปเสียง EN — ไม่งั้นประโยคจีนที่มี
-# วันที่/สแลชโดนหั่นเป็นชิ้นๆ สลับสำเนียงไปมา (feedback จากเทสต์จริง 11 ก.ค.)
-# ตัวเลขในบริบทจีนให้เสียงจีนอ่าน (9月 → 九月 ถูกต้อง)
+# 英文片段 = 必須是真正的「拉丁字詞」（A-Z 字母，中間可夾空格／連字號／撇號）
+# 符號 /（）： 和數字「不會」觸發切換成英文語音 — 否則含有
+# 日期或斜線的中文句子會被切成好幾段，口音來回切換（7/11 實測回饋）
+# 中文語境裡的數字交給中文語音唸（9月 → 九月，才正確）
 _LATIN_RUN = re.compile(r"[A-Za-z][A-Za-z'\- ]*[A-Za-z]|[A-Za-z]")
 
 
 def _segments(text):
-    """แยกข้อความเป็น [(ท่อน, is_zh)] — สลับภาษาเฉพาะเมื่อเจอคำละตินจริง"""
+    """把文字切成 [(片段, 是否為中文)] — 只有遇到真正的拉丁字詞才切換語言"""
     text = str(text)
     if not _CJK.search(text):
         return [(text.strip(), False)] if text.strip() else []
     out = []
-    pieces = _LATIN_RUN.split(text)              # ชิ้นระหว่างคำละติน
-    matches = _LATIN_RUN.findall(text)           # คำละตินที่เจอ
+    pieces = _LATIN_RUN.split(text)              # 拉丁字詞之間的片段
+    matches = _LATIN_RUN.findall(text)           # 找到的拉丁字詞
     for i, piece in enumerate(pieces):
         piece = piece.strip()
-        if piece and _HAS_DIGIT_OR_CJK.search(piece):    # ข้ามเศษ punctuation ล้วน
+        if piece and _HAS_DIGIT_OR_CJK.search(piece):    # 略過只有標點的片段
             out.append((piece, True))
         if i < len(matches):
             m = matches[i].strip()

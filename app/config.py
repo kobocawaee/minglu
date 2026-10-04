@@ -1,26 +1,26 @@
 """
-config.py — ค่าตั้งกลางของแอป (mode→prompt, เลือก backend, params)
+config.py — 應用程式的集中設定（模式→提示詞、選擇後端、參數）
 ==================================================================
-รวมการตัดสินใจจาก Phase 1 ไว้ที่เดียว: prompt ที่ validate แล้ว, best config
-(le=384, max_new_tokens=50, rep_penalty=1.2), และ mapping use case → backend
+把 Phase 1 的決定集中在一處：驗證過的提示詞、最佳設定
+（le=384、max_new_tokens=50、rep_penalty=1.2），以及使用情境 → 後端的對應
 """
 
 # ---------------------------------------------------------------------------
-# Prompt ต่อโหมด — ต่อยอดจาก safety prompt ที่ผ่านการ eval ใน Phase 1
-# หลักการ: concise + "only what you clearly see" + "Do not guess"
-#          (ลด hallucination + สั้นเหมาะ TTS — ดู docs/results_section.md §5.3)
+# 各模式的提示詞 — 延續 Phase 1 評測過的安全提示詞
+# 原則：簡短 + 「只說清楚看到的」+「不要猜」
+#       （減少幻覺 + 短句適合語音 — 見 docs/results_section.md §5.3）
 # ---------------------------------------------------------------------------
-# ⚠️ หลัก prompt (จาก live test 1 ก.ค.): balance ระหว่าง 2 error
-#   - เอ่ย "people" นำ → หลอนคนในฉากว่าง (phantom-actor)
-#   - ห้ามเอ่ยคนเลย → พลาดคนที่ยืนอยู่จริง (อันตราย!)
-# → สูตรที่ผ่านเทสต์ 8/8: "include any person who is CLEARLY present. Do not INVENT people
-#   who are not there" (report คนจริง + ไม่หลอน) + "if unsure say so"
+# ⚠️ 提示詞原則（7/1 實測）：要在兩種錯誤之間取得平衡
+#   - 先提到「people」→ 在空無一人的場景幻想出人（phantom-actor）
+#   - 完全不准提到人 → 漏掉真的站在那裡的人（危險！）
+# → 通過 8/8 測試的寫法："include any person who is CLEARLY present. Do not INVENT people
+#   who are not there"（真的有人才說＋不幻想）+ "if unsure say so"
 MODE_PROMPTS = {
-    # ⚠️ ไม่ให้ตัดสิน "safe to cross" (ต้นตอ "I don't know about crossing" + อันตราย:
-    #   finding §5.5.1 โมเดลอ่านไฟผิดบ่อย). ให้รายงานสีไฟแบบ "สังเกตเห็น" + รถ เท่านั้น
-    #   ไม่ใส่ persona "I am visually impaired" (ต้นตอ echo "as I am impaired")
-    # HYBRID (street): VLM ตอบ "สีไฟ" อย่างเดียว — เรื่องรถให้ detector (app/crossing.py)
-    #   ทำ เพราะ VLM เดา moving/stopped ไม่ได้ + หลอนรถ (§5.5.2). แยกงานตามจุดแข็ง
+    # ⚠️ 不讓模型判斷「能不能安全過馬路」（"I don't know about crossing" 的來源，而且危險：
+    #   §5.5.1 發現模型常讀錯燈號）。只回報「看到的」燈號＋車輛
+    #   不加 "I am visually impaired" 的角色設定（會被照抄成 "as I am impaired"）
+    # 混合式（street）：VLM 只回答「燈號顏色」— 車輛交給偵測模型（app/crossing.py）
+    #   處理，因為 VLM 分不出車在動還是停著，還會幻想出車（§5.5.2）。依專長分工
     "street": (
         "At a crosswalk, in one short sentence, name the colour of the pedestrian or traffic "
         "light: say 'The light is red', 'The light is green', or 'No traffic light visible'. "
@@ -36,13 +36,13 @@ MODE_PROMPTS = {
         "layout in front of me and any obstacle in my path that you clearly see. Mention a "
         "person only if one is clearly present; do not invent people. If unsure, say you are not sure."
     ),
-    # reading = VizWiz "reading" — ⚠️ โหมด read ใช้ OCR (app/ocr.py) ไม่ใช่ VLM/prompt นี้
-    # (VLM อ่าน text ไม่แม่น → แยกไปใช้ OCR engine). prompt นี้เก็บไว้เป็น fallback เฉยๆ
+    # reading = VizWiz 的「reading」— ⚠️ 讀字模式用 OCR（app/ocr.py），不是 VLM／這個提示詞
+    # （VLM 讀文字不準 → 改用 OCR 引擎）。這個提示詞只是保留作為備援
     "read": (
         "I am visually impaired. Read any text, letters, or numbers you see in the image, "
         "exactly as written. Do not guess. If you truly see no text, say 'No text visible.'"
     ),
-    # identification = VizWiz "identification" — จ่อของชิ้นเดียวใกล้ๆ (เคสที่ตัวจิ๋วน่าจะทำได้ดี)
+    # identification = VizWiz 的「identification」— 把單一物品拿近鏡頭（小模型應該做得到的情況）
     "object": (
         "I am visually impaired and holding an object up to the camera. In one short sentence, "
         "say what the object is. If it has a clear label or text, read it. Only what you clearly "
@@ -68,23 +68,23 @@ OCR_MIN_CONF = 0.30            # 低於此信心的文字不唸（EasyOCR 的雜
 READ_ENGINE = "auto"
 OCR_MIN_SURE_RATIO = 0.5       # auto：有把握的字數佔偵測到字數的比例低於此值 → 交給 Gemma
 
-# max_new_tokens ต่อโหมด — จาก finding §5.6: latency ของ SmolVLM = decode-bound
-# → ตัด output ให้สั้น = เร็วขึ้นมาก. street ต้องการเร็วสุด (~1.6s@iGPU ที่ 35 tokens)
-# ⚠️ caveat: สั้นไป (เช่น <25) จะ drop nuance ความปลอดภัย (ไฟแดง→"Stopped." เฉยๆ) — 35 คือจุดสมดุล
-# ลด cap ให้ output สั้นสม่ำเสมอ + เร็วขึ้น (decode-bound §5.6) — จาก live test
-# "one short sentence, name objects" ให้ผลสั้นอยู่แล้ว, cap 40 กันเคสพล่ามนานๆ (เคยเจอ 6.7s)
+# 各模式的 max_new_tokens — 依 §5.6 的發現：SmolVLM 的延遲卡在逐字產生（decode-bound）
+# → 輸出越短越快。過馬路最需要快（iGPU 上 35 tokens 約 1.6 秒）
+# ⚠️ 注意：太短（例如 <25）會丟掉安全相關的細節（紅燈 → 只剩「Stopped.」）— 35 是平衡點
+# 降低上限讓輸出一致地短＋更快（decode-bound §5.6）— 來自實測
+# 「one short sentence, name objects」本來就很短，上限 40 是防止偶爾長篇大論（曾經遇過 6.7 秒）
 MODE_MAX_TOKENS = {
-    "street": 42,        # {สีไฟ}.{สถานะรถ} — ต้องมีที่พอ 2 ท่อน ไม่ตัดกลางประโยค
-    "surrounding": 55,   # 1 ประโยคมีรายละเอียด+ตำแหน่ง (~2-3s@iGPU)
-    "indoor": 42,        # 2 ประโยคสั้น — เร็วขึ้น (จาก 55, decode-bound §5.6)
-    "read": 60,          # text อาจยาว
-    "object": 30,        # ชื่อของสั้นๆ
+    "street": 42,        # {燈號}.{車輛狀態} — 要留夠兩段的長度，不在句子中間截斷
+    "surrounding": 55,   # 一句有細節＋方位的描述（iGPU 上約 2-3 秒）
+    "indoor": 42,        # 兩個短句 — 比較快（原本 55，decode-bound §5.6）
+    "read": 60,          # 文字可能很長
+    "object": 30,        # 物品名稱很短
 }
 
 # ---------------------------------------------------------------------------
-# Backend / device — เลือกตาม use case (สรุปจาก Phase 1 Table 5)
-#   real-time  → SmolVLM-500M (CPU พอดี 8GB / iGPU เร็วกว่าแต่ RAM 6.6GB)
-#   คุณภาพสูง  → Gemma-3-4b @ NPU (ช้า ~18s ใช้แบบ non-realtime)
+# 後端／裝置 — 依使用情境選擇（整理自 Phase 1 Table 5）
+#   即時     → SmolVLM-500M（CPU 剛好 8GB／iGPU 較快但佔記憶體 6.6GB）
+#   高品質   → NPU 上的 Gemma-3-4b（約 18 秒，非即時使用）；資服版預設 gemma_hf（NVIDIA 顯示卡）
 # ---------------------------------------------------------------------------
 BACKEND = "gemma_hf"         # "gemma_hf"（資服版預設，繁中，NVIDIA 顯示卡）| "smolvlm"（英文）| "gemma_npu"
 GEMMA_MODEL = "google/gemma-3-4b-it"
@@ -102,9 +102,9 @@ ASK_MAX_TOKENS = 80                           # 語音提問的回答長度上�
 ASK_HISTORY_TURNS = 3                         # 追問時最多沿用前幾輪問答
 GEMMA_GEN_PARAMS = {"max_new_tokens": 60, "repetition_penalty": 1.05}
 SMOLVLM_MODEL = "HuggingFaceTB/SmolVLM-500M-Instruct"
-DEVICE = "cpu"               # "cpu" | "igpu"  (igpu ต้อง env vlm_dml)
+DEVICE = "cpu"               # "cpu" | "igpu"  （igpu 需要 vlm_dml 環境）
 
-# best config จาก Phase 1 (sweet spot สำหรับ model จิ๋ว)
+# Phase 1 的最佳設定（小模型的最佳點）
 GEN_PARAMS = {
     "longest_edge": 384,
     "max_new_tokens": 50,
@@ -113,25 +113,25 @@ GEN_PARAMS = {
 }
 
 # ---------------------------------------------------------------------------
-# Frame-quality gate (app/quality.py) — กันเฟรมเบลอ/มืดเข้า VLM
-# ความไม่เสถียรของคำบรรยายส่วนใหญ่มาจากเฟรมคุณภาพแย่ (decoder เป็น greedy อยู่แล้ว)
-# threshold คาลิเบรตจาก 17 รูป canonical: blur 192-5424, bright 87-140
-#   → ตั้งเผื่อ (min_blur 80 < 192, bright 40-225 กว้างกว่า 87-140) กัน false-reject
-# ปิด gate ได้ด้วย QUALITY_GATE = False (หรือ --no-quality-gate)
+# 畫面品質檢查（app/quality.py）— 不讓模糊或太暗的畫面進到 VLM
+# 描述不穩定大多來自畫面品質差（解碼已經是貪婪法）
+# 門檻以 17 張標準測試圖校準：模糊度 192-5424、亮度 87-140
+#   → 留有餘裕（min_blur 80 < 192，亮度 40-225 比 87-140 寬），避免誤擋
+# 可設 QUALITY_GATE = False 關閉（或用 --no-quality-gate）
 # ---------------------------------------------------------------------------
 QUALITY_GATE = True
 QUALITY = {
-    "min_blur": 80.0,        # variance ของ Laplacian ต่ำกว่านี้ = เบลอเกินไป
-    "min_brightness": 40.0,  # มืดเกิน
-    "max_brightness": 225.0, # จ้า/ล้างขาวเกิน
+    "min_blur": 80.0,        # Laplacian 變異數低於這個值 = 太模糊
+    "min_brightness": 40.0,  # 太暗
+    "max_brightness": 225.0, # 太亮／過曝
 }
 
 # ---------------------------------------------------------------------------
 # Capture / loop
 # ---------------------------------------------------------------------------
-CAMERA_INDEX = 0             # กล้องตัวแรก (เปลี่ยนถ้ามีหลายตัว)
-TRIGGER = "key"             # "key" = กด space ถ่าย 1 ครั้ง | "interval" = ถ่ายอัตโนมัติ
-INTERVAL_SEC = 5.0          # ใช้เมื่อ TRIGGER="interval"
+CAMERA_INDEX = 0             # 第一台攝影機（有多台時可以改）
+TRIGGER = "key"             # "key" = 按空白鍵拍一張 | "interval" = 定時自動拍
+INTERVAL_SEC = 5.0          # TRIGGER="interval" 時使用
 
 
 # ---------------------------------------------------------------------------
@@ -185,12 +185,12 @@ def get_quality(mode: str) -> dict:
 
 
 def get_prompt(mode: str) -> str:
-    """คืน prompt ของโหมด (fallback เป็น DEFAULT_MODE ถ้าชื่อผิด)"""
+    """回傳該模式的提示詞（名稱錯誤時改用 DEFAULT_MODE）"""
     table = MODE_PROMPTS_ZH if _use_zh() else MODE_PROMPTS
     return table.get(mode, table[DEFAULT_MODE])
 
 
 def get_max_tokens(mode: str) -> int:
-    """คืน max_new_tokens ของโหมด (fallback = ค่าใน GEN_PARAMS)"""
+    """回傳該模式的 max_new_tokens（沒有設定時用 GEN_PARAMS 的值）"""
     table = MODE_MAX_TOKENS_ZH if _use_zh() else MODE_MAX_TOKENS
     return table.get(mode, GEN_PARAMS["max_new_tokens"])

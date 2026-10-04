@@ -1,13 +1,13 @@
 """
-smolvlm.py — backend หลัก (real-time): SmolVLM บน CPU/iGPU ผ่าน transformers
+smolvlm.py — 主要後端（即時）：在 CPU／iGPU 上透過 transformers 執行 SmolVLM
 ============================================================================
-ใช้ best config จาก Phase 1 (le=384, max_new_tokens=50, rep_penalty=1.2).
-logic การโหลด/inference ยกมาจาก code/test_smolvlm.py (ที่ benchmark แล้ว)
+採用 Phase 1 的最佳設定（le=384、max_new_tokens=50、rep_penalty=1.2）。
+載入與推論邏輯取自 code/test_smolvlm.py（已做過效能測試）
 
 env:
-  - DEVICE="cpu"  → env vlm_research (transformers 5.x, ใช้ dtype=)
-  - DEVICE="igpu" → env vlm_dml (transformers 4.49, torch-directml; ใช้ torch_dtype=)
-    ⚠️ iGPU เร็วกว่าแต่ RAM ~6.6GB (ดู Phase 1 §5.2) ต้องเครื่อง ≥16GB
+  - DEVICE="cpu"  → 環境 vlm_research（transformers 5.x，使用 dtype=）
+  - DEVICE="igpu" → 環境 vlm_dml（transformers 4.49、torch-directml；使用 torch_dtype=）
+    ⚠️ iGPU 較快但佔用約 6.6GB 記憶體（見 Phase 1 §5.2），電腦需 16GB 以上
 """
 
 import torch
@@ -16,7 +16,7 @@ from transformers import AutoModelForImageTextToText, AutoProcessor
 
 from app.base import VLMBackend
 
-# transformers 5.x ใช้ dtype= / 4.49 (env vlm_dml) ใช้ torch_dtype= (deprecated ใน 5.x)
+# transformers 5.x 用 dtype= ／ 4.49（環境 vlm_dml）用 torch_dtype=（5.x 已不建議使用）
 _DTYPE_KW = "dtype" if int(transformers.__version__.split(".")[0]) >= 5 else "torch_dtype"
 
 
@@ -32,18 +32,18 @@ class SmolVLMBackend(VLMBackend):
 
     def load(self) -> None:
         self.processor = AutoProcessor.from_pretrained(self.model_id)
-        # คุม resolution ตาม best config (le=384 = sweet spot ของ model จิ๋ว)
+        # 依最佳設定控制解析度（le=384 是小模型的最佳點）
         le = self.gen_params.get("longest_edge", 384)
         self.processor.image_processor.size = {"longest_edge": le}
         self.processor.image_processor.do_image_splitting = True
 
-        # เลือก kwarg ตามเวอร์ชัน transformers (dtype 5.x / torch_dtype 4.49)
+        # 依 transformers 版本選參數名稱（5.x 用 dtype／4.49 用 torch_dtype）
         self.model = AutoModelForImageTextToText.from_pretrained(
             self.model_id, **{_DTYPE_KW: torch.float32}
         )
 
         if self.device == "igpu":
-            # iGPU path ต้องรันใน env vlm_dml (มี torch_directml)
+            # iGPU 路徑要在環境 vlm_dml 中執行（需有 torch_directml）
             import torch_directml
             self._torch_device = torch_directml.device()
             self.model = self.model.to(self._torch_device)
@@ -74,7 +74,7 @@ class SmolVLMBackend(VLMBackend):
                 no_repeat_ngram_size=self.gen_params.get("no_repeat_ngram_size", 3),
                 do_sample=False,
             )
-        # ตัด prompt tokens ออก เหลือแต่คำตอบ
+        # 去掉提示詞的 token，只留下回答
         gen_ids = out_ids[:, inputs["input_ids"].shape[1]:]
         text = self.processor.batch_decode(gen_ids, skip_special_tokens=True)[0]
         return text.strip()

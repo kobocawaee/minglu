@@ -1,42 +1,42 @@
 """
-base.py — interface กลางของ VLM backend
+base.py — VLM 後端的共用介面
 =======================================
-ทุก backend (SmolVLM บน CPU/iGPU, Gemma บน NPU) ต้อง implement คลาสนี้
-→ app logic (assistant.py) เรียกผ่าน interface เดียว ไม่ต้องรู้ว่าข้างใน
-  เป็น transformers หรือ OGA หรือรันบน device ไหน
+每個後端（CPU／iGPU 上的 SmolVLM、NPU 上的 Gemma）都要實作這個類別
+→ 應用邏輯（assistant.py）只透過這一個介面呼叫，不需要知道裡面
+  用的是 transformers 還是 OGA，或跑在哪個裝置上
 
-เหตุผลที่ต้องมี interface: Phase 1 พบว่า backend อยู่คนละ conda env
-(transformers vs OGA) → รันพร้อมกันใน process เดียวไม่ได้. แอปจึงเลือก
-backend 1 ตัวตอน start แล้วใช้ผ่าน abstraction นี้
+為什麼需要介面：Phase 1 發現各後端裝在不同的 conda 環境
+（transformers 和 OGA），無法在同一個程序裡同時執行。所以程式在啟動時
+只選一個後端，之後都透過這層抽象來使用
 """
 
 from abc import ABC, abstractmethod
 
 
 class VLMBackend(ABC):
-    """interface ที่ทุก VLM backend ต้องมี"""
+    """每個 VLM 後端都必須提供的介面"""
 
-    #: ชื่อสั้นๆ ไว้ log / แสดงผล เช่น "smolvlm-500m@cpu"
+    #: 簡短名稱，用於紀錄與顯示，例如 "smolvlm-500m@cpu"
     name: str = "vlm-backend"
 
     @abstractmethod
     def load(self) -> None:
-        """โหลด model เข้า memory (เรียกครั้งเดียวตอน start แอป).
-        แยกจาก __init__ เพราะการโหลดช้า (หลายวินาที) อยากคุมจังหวะเอง
+        """把模型載入記憶體（程式啟動時呼叫一次）。
+        和 __init__ 分開，因為載入很慢（好幾秒），想自己控制時機
         """
         raise NotImplementedError
 
     @abstractmethod
     def describe(self, image, prompt: str, max_new_tokens: int | None = None) -> str:
-        """รับภาพ (PIL.Image หรือ numpy BGR จาก OpenCV) + prompt → คืนคำบรรยาย (str)
-        max_new_tokens: override เพดาน output ต่อโหมด (None = ใช้ default ของ backend).
-        จาก finding §5.6 latency = decode-bound → ตัด output = เร็วขึ้น (street ใช้สั้น)
-        backend แต่ละตัวจัดการ preprocessing/format เองภายใน
+        """輸入影像（PIL.Image 或 OpenCV 的 numpy BGR）＋提示詞 → 回傳描述文字（str）
+        max_new_tokens：覆寫各模式的輸出長度上限（None = 用後端的預設值）。
+        依 §5.6 的發現，延遲主要卡在逐字產生（decode-bound）→ 輸出越短越快（street 用最短）
+        前處理與格式由各後端自行處理
         """
         raise NotImplementedError
 
     def warmup(self) -> None:
-        """(ออปชัน) รัน inference หลอก 1 ครั้งให้ JIT/compile เสร็จ
-        ก่อนใช้งานจริง → ลด latency ของครั้งแรก. default ไม่ทำอะไร
+        """（可選）先空跑一次推論，讓 JIT／編譯完成，
+        降低第一次使用的延遲。預設不做任何事
         """
         pass

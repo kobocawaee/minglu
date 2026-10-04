@@ -1,24 +1,24 @@
 """
-pipeline.py — จุดรวม logic "เฟรม → คำพูด" ของทุกโหมด (ใช้ทั้ง assistant.py และ server.py)
+pipeline.py — 所有模式「畫面 → 語句」的邏輯集中處（assistant.py 和 server.py 共用）
 =========================================================================================
-เดิม logic โหมดซ้ำ 2 ที่ (desktop/มือถือ) → รวมที่เดียว. ต่อโหมด:
-  read        → OCR (RapidOCR)                                 — VLM อ่าน text ไม่ได้ (0/17)
-  street      → hybrid: VLM สีไฟ + YOLO รถในเส้นทาง (street_mode)
+原本各模式的邏輯在電腦版和手機版各寫一份 → 集中到這裡。各模式：
+  read        → OCR（資服版改用 EasyOCR）                     — VLM 讀不出文字（0/17）
+  street      → 混合式：號誌模型判斷燈號 + YOLO 判斷路徑上的車（street_mode）
   surrounding/indoor/object → VLM + postprocess
-                + person-check: YOLO เจอคนใหญ่ชัดแต่ VLM ไม่พูดถึง → เติมประโยคเตือน
-                  (คนจ่อใกล้กล้อง = กล่องใหญ่/เห็นบางส่วน VLM จิ๋วมักมองไม่ออกว่าเป็นคน
-                   — พลาดคน = อันตราย จึงให้ detector เช็คซ้ำแบบ deterministic)
-  auto        → router เลือกโหมดจากสิ่งที่ YOLO เห็น (คนตาบอดไม่ต้องเลือกโหมดเอง)
+                + 行人複查：YOLO 清楚看到人、但 VLM 沒提到 → 補一句提醒
+                  （人貼近鏡頭 = 框很大／只看到一部分，小型 VLM 常認不出是人
+                   — 漏掉人很危險，所以用偵測模型再確認一次，結果可預期）
+  auto        → router 依 YOLO 看到的東西自動選模式（視障者不必自己選）
 
-auto router (heuristic จาก COCO classes, ~50ms):
-  เห็นรถ/ไฟจราจร → street | ของถือได้ชิ้นใหญ่จ่อกลางเฟรม → object |
-  เฟอร์นิเจอร์ → indoor | อื่นๆ → surrounding
-  (read ไม่อยู่ใน auto — "อยากอ่าน" เป็นความตั้งใจของผู้ใช้ เดาจากภาพไม่ได้)
+自動選模式的規則（依 COCO 類別的經驗法則，約 50ms）：
+  看到車／紅綠燈 → street | 畫面中間有大的手持物品 → object |
+  家具 → indoor | 其他 → surrounding
+  （read 不在自動選項裡 —「想讀字」是使用者的意圖，從畫面猜不出來）
 
-rev. 07-19 — street bias (ทดลองบนชุด verified 60 ใบ, results/router_eval_v2.md):
-  street cue รับที่ conf ≥0.25 (cue อื่นคง ≥0.40) — เอนเข้า street ทิศเดียว = fail-safe
-  → street-recall 16/20 → 19/20 แลก benign misroute 1 ใบ. ส่วน "LYTNet เป็น street cue"
-  ทดลองแล้ว *ไม่เอา*: นอก domain (รูป indoor/object) มันตอบ red@1.00 มั่ว 24/40 ใบ
+rev. 07-19 — 偏向過馬路模式（在 60 張驗證過的圖上實驗，results/router_eval_v2.md）：
+  過馬路線索的信心門檻放寬到 ≥0.25（其他線索維持 ≥0.40）— 只往過馬路偏 = 失效時偏安全
+  → 過馬路的召回率 16/20 → 19/20，代價是 1 張無害的誤判。至於「用 LYTNet 當過馬路線索」
+  實驗後*不採用*：在非街景的圖（室內／物品）上它會亂回答 red@1.00，40 張錯 24 張
 """
 
 import re
@@ -26,7 +26,7 @@ import re
 from app import config, postprocess, detect
 from app.messages import t, mode_name
 
-# ---- คลาส COCO ที่ใช้ route ----
+# ---- 自動選模式用到的 COCO 類別 ----
 _STREET_CUES = detect.VEHICLE_CLASSES | {"traffic light", "stop sign"}
 _INDOOR_CUES = {"chair", "couch", "bed", "dining table", "tv", "refrigerator",
                 "microwave", "oven", "sink", "toilet", "potted plant"}
@@ -42,20 +42,20 @@ _PERSON_RE = re.compile(r"\b(person|people|man|woman|men|women|pedestrian|someon
 
 
 def route(image):
-    """เลือกโหมดจากสิ่งที่ detector เห็น. คืน (mode, dets) — dets ส่งต่อไปใช้ได้เลย
-    street bias: street cue รับตั้งแต่ conf 0.25 (พลาด street = เสี่ยง L4, พลาดโหมดอื่น = benign)
-    cue ที่เหลือใช้ ≥0.40 เท่าเดิม"""
+    """依偵測模型看到的東西選模式。回傳 (mode, dets) — dets 可以直接接著用
+    偏向過馬路：過馬路線索從信心 0.25 就接受（漏判過馬路 = L4 風險，漏判其他模式 = 無害）
+    其他線索維持 ≥0.40"""
     dets, (w, h) = detect.detect(image, conf=0.25, classes="all")
     if any(d["cls"] in _STREET_CUES for d in dets):
         return "street", dets
 
     dets = [d for d in dets if d["conf"] >= 0.40]
-    if not dets:                      # detector ใช้ไม่ได้/ไม่เห็นอะไร → บรรยายทั่วไป
+    if not dets:                      # 偵測模型不能用／什麼都沒看到 → 一般描述
         return "surrounding", dets
 
     classes = {d["cls"] for d in dets}
 
-    # ของถือได้ชิ้นใหญ่ จ่อกลางเฟรม → โหมด object
+    # 畫面中間有大的手持物品 → 物品模式
     for d in dets:
         if d["cls"] in _HANDHELD:
             x1, y1, x2, y2 = d["box"]
@@ -70,7 +70,7 @@ def route(image):
 
 
 def _person_clearly_present(image) -> bool:
-    """YOLO เจอคนที่ 'ชัด' ไหม (conf สูง + กล่องใหญ่พอ = อยู่ใกล้/เด่น ไม่ใช่คนจิ๋วไกลๆ)"""
+    """YOLO 有沒有「清楚」看到人（信心高＋框夠大 = 近或明顯，不是遠方很小的人）"""
     dets, (w, h) = detect.detect(image, conf=0.50)
     for d in dets:
         if d["cls"] == detect.PERSON_CLASS:
@@ -104,8 +104,8 @@ def _read(backend, image) -> str:
 
 def describe(backend, image, mode: str):
     """
-    ประมวลผล 1 เฟรมตามโหมด. คืน (text, mode_used).
-    mode="auto" → route เลือกโหมดก่อน แล้วบอกชื่อโหมดนำหน้าให้ผู้ใช้รู้
+    處理一張畫面。回傳 (text, mode_used)。
+    mode="auto" → 先自動選模式，再在句首說出模式名稱讓使用者知道
     """
     auto = mode == "auto"
     if auto:
@@ -127,7 +127,7 @@ def describe(backend, image, mode: str):
             backend.describe(image, config.get_prompt(mode),
                              max_new_tokens=config.get_max_tokens(mode))
         )
-        # person-check (hybrid): VLM ไม่พูดถึงคน แต่ detector เห็นคนชัด → เติมเตือน
+        # 行人複查（混合式）：VLM 沒提到人，但偵測模型清楚看到人 → 補一句提醒
         if mode in ("surrounding", "indoor") and not _PERSON_RE.search(text):
             if _person_clearly_present(image):
                 text = (text + " " + t("person_ahead")).strip()

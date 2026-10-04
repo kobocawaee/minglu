@@ -1,31 +1,31 @@
 """
-light_classifier.py — อ่านสีไฟคนข้ามด้วย LYTNetV2 (dedicated CNN) แทน VLM
+light_classifier.py — 用 LYTNetV2（專用 CNN）判斷行人號誌燈號，取代 VLM
 ==========================================================================
-ทำไม: §5.5.1 พิสูจน์ว่า VLM ทุกตัวอ่านไฟไม่ได้ (discrimination ≈ 0, 500M false-clear
-ไฟแดง 77%). LYTNetV2 (Yu et al. 2019, MIT) บน subset เดียวกัน: แดง 29/30 เขียว 28/30
+原因：§5.5.1 證明所有 VLM 都讀不出號誌（分辨能力 ≈ 0，500M 模型把紅燈誤報可通行
+達 77%）。LYTNetV2（Yu et al. 2019，MIT）在同一子集上：紅 29/30、綠 28/30
 discrimination ~90pp, ~70ms CPU → `results/lytnet_validation.md`
 
-⚠️ หลัก "ไม่มีไฟต้องบอกว่าไม่มีไฟ — ห้ามมั่วสี" → กัน 3 ชั้น (validate แล้วทั้งหมด):
-  ชั้น 1  คลาส "none" ของโมเดลเอง (PTL val none 171 ใบ: ตอบ none 164/171 = 96%)
-  ชั้น 2  หลักฐานว่ามีไฟจริง อย่างใดอย่างหนึ่ง (field test 14 ก.ค.: YOLO เห็นไฟคนข้าม
-         แค่ 3/45 เฟรม — ไฟเล็ก/ไกลเกิน → ต้องมีหลักฐานเชิงเวลาแทน = temporal aggregation):
-         (ก) YOLO เห็น "traffic light" ในเฟรมนี้หรือภายใน 8 วิที่ผ่านมา (+2-pass zoom)
-         (ข) consensus: 2 prediction ล่าสุดคลาสเดียวกัน conf≥0.95 ทั้งคู่
-         (ค) majority: ≥3/5 เฟรมใน window เป็นคลาสเดียวกัน + peak ≥0.95 อย่างน้อย 1 เฟรม
-             โดยไม่มีสีตรงข้ามปน (แดง: mean≥0.75 | เขียว: ทุกเฟรม≥0.90 — อสมมาตรตาม L4)
-  ชั้น 3  confidence: red/green ต้อง ≥0.95 (คู่หลักฐาน ก/ข) หรือ ≥0.99 เดี่ยวๆ
-         คลาส countdown เชื่อยาก (ตัวอย่างเทรนน้อย, มั่วบน OOD) → ต้องมี YOLO เห็นไฟเท่านั้น
-         (ไม่รับ consensus/majority — บนวิดีโอจริง countdown_green คือ noise กระพริบช่วงไฟแดง)
+⚠️ 原則「沒有號誌就要說沒有 — 不准亂猜顏色」→ 三層防護（全部驗證過）：
+  第 1 層  模型本身的「none」類別（PTL 驗證集 171 張無號誌：回答 none 164/171 = 96%）
+  第 2 層  確實有號誌的證據，任一即可（7/14 實地測試：YOLO 只在 3/45 張畫面
+         看到行人號誌 — 號誌太小／太遠 → 改用時間上的證據 = 跨畫面彙整）：
+         (甲) YOLO 在這張或過去 8 秒內看到「traffic light」（含兩階段放大）
+         (乙) 一致：最近兩次預測是同一類別，而且信心都 ≥0.95
+         (丙) 多數：時間窗內 ≥3/5 張是同一類別，且至少一張信心 ≥0.95
+             而且沒有混到相反的顏色（紅：平均 ≥0.75 | 綠：每張都 ≥0.90 — 依 L4 風險不對稱）
+  第 3 層  信心：紅／綠要 ≥0.95（搭配證據甲／乙），或單獨 ≥0.99
+         倒數類別較不可信（訓練樣本少，在分布外的圖上會亂猜）→ 只在 YOLO 看到號誌時才採用
+         （不接受一致／多數：在實際影片中 countdown_green 是紅燈期間閃爍的雜訊）
 
-เกณฑ์มาจากการวัดจริงบน PTL val เต็ม split (n=645, scratch calibrate_gate 14 ก.ค.):
-  บนภาพไม่มีไฟ: มั่ว red/green ที่ conf≥0.95 = 3/171 (1.8%) — เท่ากับที่ 0.99 เป๊ะ
-  แปลว่าเข้มขึ้นเป็น 0.99 ไม่ได้กันมั่วเพิ่ม แต่เสีย recall เขียว 92.9%→86.2%
-  ทิศอันตราย (ทายเขียวบนภาพแดง) ที่ 0.95 = 2/235 ต่อเฟรม → consensus 2 เฟรมยิ่งต่ำ
+門檻來自 PTL 驗證集完整切分的實測（n=645，7/14 校準）：
+  在沒有號誌的圖上：信心 ≥0.95 時亂猜紅／綠 = 3/171（1.8%）— 和 0.99 時完全一樣
+  也就是說提高到 0.99 並不會多擋亂猜，卻會讓綠燈召回率從 92.9% 降到 86.2%
+  危險方向（紅燈圖猜成綠）在 0.95 時 = 每張 2/235 → 要求連續兩張一致後更低
 
-ผลบน 6 รูป canonical: ไฟจริง 3/3 สีถูก, รูปไม่มีไฟ 3/3 ตอบ "no light" (ไม่มั่วเลย)
+6 張標準測試圖的結果：有號誌的 3/3 顏色正確，沒有號誌的 3/3 回答「沒有號誌」（完全沒亂猜）
 
-fail-open: ไม่มี torch/weights (เช่น env NPU) → available() = False, street_mode
-fallback ไปใช้ VLM ถามสีไฟแบบเดิม
+容錯：沒有 torch／權重檔（例如 NPU 環境）→ available() = False，street_mode
+改回用 VLM 詢問燈號的舊方法
 """
 
 import time
@@ -38,25 +38,25 @@ _MODEL_DIR = _REPO / "external/ImVisible/Model"
 _WEIGHTS = _MODEL_DIR / "LytNetV2_weights"
 
 CLASSES = ["red", "green", "none", "countdown_blank", "countdown_green"]
-CONF_HIGH = 0.99   # มั่นใจมาก → รายงาน red/green ได้แม้ไม่มีหลักฐานอื่น
-CONF_MIN = 0.95    # ขั้นต่ำเมื่อมีหลักฐานยืนยัน (YOLO เห็นไฟ หรือ consensus ข้ามเฟรม)
+CONF_HIGH = 0.99   # 非常有把握 → 即使沒有其他證據也可以報紅／綠
+CONF_MIN = 0.95    # 有佐證時的最低信心（YOLO 看到號誌，或跨畫面一致）
 
-_WINDOW_S = 8.0    # อายุความจำ (สั้นกว่ารอบไฟจริงมาก — ไฟเปลี่ยนแล้ว consensus คลาสเก่าหลุดเอง)
+_WINDOW_S = 8.0    # 記憶時長（遠短於實際號誌週期 — 燈號一變，舊類別的一致性自然失效）
 _MAX_KEEP = 5
 
 
 class LightHistory:
-    """ความจำสั้นข้ามเฟรมของ street mode (โหมด continuous / ผู้ใช้กดถี่ๆ)
+    """過馬路模式跨畫面的短期記憶（連續模式／使用者連續點擊）
 
-    ทำไมต้องมี: field test ไฟจริงไต้หวัน (14 ก.ค.) YOLO เห็นกล่อง traffic light แค่
-    3/45 เฟรม (ไฟคนข้ามเล็ก/ไกลเกินสำหรับ YOLOv8n) → gate เดิมพึ่ง YOLO อย่างเดียว
-    ทำให้แอปเงียบทั้งที่ LYTNet อ่านสีถูก. "เห็นคลาสเดิมซ้ำ 2 เฟรมติด" คือหลักฐานว่า
-    มีไฟจริงที่แข็งพอๆ กัน (ภาพมั่วให้สีเดิมซ้ำติดกันยาก — ดู calibration ใน docstring บน)
+    為什麼需要：臺灣號誌實地測試（7/14）YOLO 只在 3/45 張畫面看到 traffic light 框
+    （行人號誌對 YOLOv8n 來說太小／太遠）→ 原本只靠 YOLO 的關卡
+    讓程式在 LYTNet 其實判斷正確時也保持沉默。「連續兩張看到同一類別」
+    是同樣可靠的「確實有號誌」證據（亂猜很難連續兩張都同色 — 見上方 docstring 的校準）
     """
 
     def __init__(self):
-        self._preds = []      # [(t, cls, conf)] ล่าสุดไม่เกิน _MAX_KEEP ภายใน _WINDOW_S
-        self._light_t = 0.0   # เวลาเจอ YOLO traffic light ครั้งล่าสุด (sticky gate)
+        self._preds = []      # [(時間, 類別, 信心)] 最近最多 _MAX_KEEP 筆，且在 _WINDOW_S 內
+        self._light_t = 0.0   # 最近一次 YOLO 看到 traffic light 的時間（關卡保持開啟）
 
     def _fresh(self):
         now = time.time()
@@ -70,11 +70,11 @@ class LightHistory:
             self._light_t = time.time()
 
     def saw_light_recently(self) -> bool:
-        """YOLO เคยเห็นไฟภายใน window ไหม — ไฟไม่หายไปไหนใน 8 วิ ถือว่า gate ยังเปิด"""
+        """YOLO 在時間窗內是否看過號誌 — 號誌 8 秒內不會消失，視為關卡仍開啟"""
         return time.time() - self._light_t <= _WINDOW_S
 
     def consensus(self, cls: str, min_conf: float = CONF_MIN) -> bool:
-        """2 prediction ล่าสุด (รวมเฟรมนี้) เป็นคลาสเดียวกัน + conf ถึงขั้นต่ำทั้งคู่"""
+        """最近兩次預測（含這一張）是同一類別，且信心都達到最低門檻"""
         p = self._fresh()
         if len(p) < 2:
             return False
@@ -82,18 +82,18 @@ class LightHistory:
         return c1 == c2 == cls and min(f1, f2) >= min_conf
 
     def majority(self):
-        """เสียงข้างมากใน window (อย่างน้อย 3/5) — กู้เฟรม conf กลางๆ ที่เห็นตรงกันซ้ำๆ
-        และกันคลาส noise (countdown_green กระพริบช่วงไฟแดง) มาขัดจังหวะ
+        """時間窗內的多數決（至少 3/5）— 救回信心中等但反覆一致的畫面，
+        並防止雜訊類別（紅燈期間閃爍的 countdown_green）打斷判斷
 
-        เงื่อนไข (ทุกข้อ):
-          1. peak: อย่างน้อย 1 เฟรมของคลาสนั้น conf ≥0.95 — สาย conf กลางๆ ล้วน
-             ไม่นับเป็นหลักฐาน (กันเคสยืนนิ่งชี้ฉากที่โมเดลทายผิดคงที่ ~0.86
-             เช่น crosswalk_car ซึ่งไม่มีไฟจริง; ฉากมีไฟจริงมีเฟรมชัดๆ แตะ 1.00 เสมอ)
-          2. ห้ามมีสีตรงข้ามใน window เลย → ไฟเพิ่งเปลี่ยนจริงจะปิดเสียงข้างมากเก่าทันที
-             (stale "เขียว" โดนเฟรมแดงเฟรมแรก kill ทันที — lag ไปทางปลอดภัยเท่านั้น)
-          3. อสมมาตรตามความเสี่ยง (advisor: fail-safe street bias):
-             red   → mean conf ≥0.75 พอ   (พูด "แดง" ผิด = ผู้ใช้รอเก้อ ไม่อันตราย)
-             green → ทุกเฟรมต้อง ≥0.90     (พูด "เขียว" ผิด = อันตรายถึงชีวิต L4)
+        條件（全部都要符合）：
+          1. 峰值：該類別至少有一張信心 ≥0.95 — 全部只是中等信心
+             不算證據（防止站著不動、模型穩定猜錯在 ~0.86 的情況，
+             例如 crosswalk_car 其實沒有號誌；真的有號誌時一定有清楚的畫面達到 1.00）
+          2. 時間窗內完全不能有相反的顏色 → 燈號真的改變時會立刻推翻舊的多數
+             （過時的「綠」碰到第一張紅燈畫面就立刻作廢 — 延遲只會往安全的方向）
+          3. 依風險不對稱（指導建議：失效時偏向安全）：
+             red   → 平均信心 ≥0.75 即可   （誤報「紅」= 使用者白等，不危險）
+             green → 每一張都要 ≥0.90     （誤報「綠」= 可能致命，L4）
         """
         p = self._fresh()
         if len(p) < 3:
@@ -136,13 +136,13 @@ def _net():
 
 
 def predict(image):
-    """PIL.Image → (class_name, confidence). input 1024x768 (V2 บังคับ ≥768x768), pixel ดิบ 0-255"""
+    """PIL.Image → (類別名稱, 信心)。輸入 1024x768（V2 要求 ≥768x768），原始像素 0-255"""
     import torch
     import numpy as np
     im = image.convert("RGB").resize((1024, 768))
     x = torch.from_numpy(np.transpose(np.asarray(im, dtype=np.float32), (2, 0, 1))).unsqueeze(0)
     with torch.no_grad():
-        cls, _direction = _net()(x)      # forward มี softmax ในตัว
+        cls, _direction = _net()(x)      # forward 內含 softmax
     p = cls[0].numpy()
     i = int(p.argmax())
     return CLASSES[i], float(p[i])
@@ -150,14 +150,14 @@ def predict(image):
 
 def light_phrase(image, yolo_sees_light: bool, history: "LightHistory | None" = None) -> str:
     """
-    คืนประโยคสีไฟที่ 'ปลอดภัยที่จะพูด' ตามกฎ 3 ชั้น.
-    yolo_sees_light = YOLO เจอกล่อง 'traffic light' ในเฟรมนี้ไหม (จาก street_mode)
-    history = ความจำข้ามเฟรม (ถ้ามี) — เปิดทาง consensus + sticky YOLO gate
+    依三層規則，回傳「可以安全說出口」的燈號句子。
+    yolo_sees_light = 這張畫面 YOLO 有沒有看到 'traffic light' 框（來自 street_mode）
+    history = 跨畫面記憶（若有）— 啟用一致性判斷＋關卡保持開啟
     """
     try:
         cls, conf = predict(image)
     except Exception:
-        return ""                                   # โมเดลพัง → ไม่พูดอะไร (fail-open)
+        return ""                                   # 模型出錯 → 什麼都不說（容錯）
 
     gate = yolo_sees_light
     if history is not None:
@@ -170,13 +170,13 @@ def light_phrase(image, yolo_sees_light: bool, history: "LightHistory | None" = 
         if history is not None and history.consensus(cls):
             return t("light_" + cls)
 
-    # countdown_blank / countdown_green — เชื่อได้เฉพาะเมื่อ YOLO ยืนยันว่ามีไฟจริง
-    # (ห้ามใช้ consensus/majority: บนวิดีโอจริง countdown_green คือ noise กระพริบช่วงไฟแดง)
+    # countdown_blank / countdown_green — 只有在 YOLO 確認確實有號誌時才採信
+    # （不可用一致／多數：在實際影片中 countdown_green 是紅燈期間閃爍的雜訊）
     elif cls != "none" and gate and conf >= CONF_MIN:
         return t("light_countdown")
 
-    # เฟรมนี้เดี่ยวๆ ไม่พอ → ฟังเสียงข้างมากใน window (temporal aggregation):
-    # กู้เฟรม conf กลางๆ, เกลี่ย noise กระพริบ, และทนไฟโดนบัง 1 เฟรม (none แวบเดียว)
+    # 這張單獨看不夠 → 參考時間窗內的多數決（跨畫面彙整）：
+    # 救回中等信心的畫面、平滑閃爍雜訊，並容許號誌被擋住一張（短暫出現 none）
     if history is not None:
         maj = history.majority()
         if maj:

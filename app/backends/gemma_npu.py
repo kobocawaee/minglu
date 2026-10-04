@@ -1,14 +1,14 @@
 """
-gemma_npu.py — backend คุณภาพสูง (non-realtime): Gemma-3-4b บน NPU ผ่าน OGA
+gemma_npu.py — 高品質後端（非即時）：在 NPU 上透過 OGA 執行 Gemma-3-4b
 ===========================================================================
-สำหรับโหมด indoor ที่รับ latency สูงได้ (ดู Phase 1 Table 5).
-⚠️ ช้า: TTFT ~17s, decode ~4.6 tok/s — prefill-bound (§5.6) ไม่เหมาะ real-time
+用於可以接受較高延遲的室內模式（見 Phase 1 Table 5）。
+⚠️ 很慢：首字延遲約 17 秒、產生速度約 4.6 tok/s — 卡在預填（prefill-bound，§5.6），不適合即時使用
 
-env: ryzen-ai-1.7.1 (OGA + RyzenAI EP) — คนละ env กับ smolvlm!
+環境：ryzen-ai-1.7.1（OGA + RyzenAI EP）— 和 smolvlm 不同環境！
     conda activate ryzen-ai-1.7.1
-    python -m app.assistant --mode indoor   (ตั้ง BACKEND="gemma_npu" ใน config.py)
+    python -m app.assistant --mode indoor   （在 config.py 設定 BACKEND="gemma_npu"）
 
-logic port มาจาก code/bench_gemma_npu.py (ที่ทดสอบรันจริงแล้ว 17 รูป)
+邏輯移植自 code/bench_gemma_npu.py（已實際跑過 17 張圖）
 """
 
 import os
@@ -19,7 +19,7 @@ from app.base import VLMBackend
 
 class GemmaNPUBackend(VLMBackend):
     def __init__(self, model_dir="models/gemma3_4b_npu", gen_params=None):
-        # ⚠️ ต้อง absolute path ไม่งั้น OGA ต่อ path ซ้ำ (ดู bench_gemma_npu.py)
+        # ⚠️ 必須用絕對路徑，否則 OGA 會把路徑重複接上（見 bench_gemma_npu.py）
         self.model_dir = os.path.abspath(model_dir)
         self.gen_params = gen_params or {}
         self.name = "gemma-3-4b@npu"
@@ -29,7 +29,7 @@ class GemmaNPUBackend(VLMBackend):
         self.tokenizer_stream = None
 
     def load(self) -> None:
-        # import ในนี้ (lazy) เพราะ onnxruntime_genai มีแค่ใน env ryzen-ai-1.7.1
+        # 在這裡才 import（延遲載入），因為 onnxruntime_genai 只裝在 ryzen-ai-1.7.1 環境
         import onnxruntime_genai as og
         self.og = og
         self.model = og.Model(self.model_dir)
@@ -38,7 +38,7 @@ class GemmaNPUBackend(VLMBackend):
 
     @staticmethod
     def _build_prompt(user_text: str) -> str:
-        """chat template ของ Gemma-3 (<start_of_image> = ตำแหน่งรูป)"""
+        """Gemma-3 的對話模板（<start_of_image> = 圖片的位置）"""
         return (
             "<start_of_turn>user\n"
             "<start_of_image>"
@@ -51,7 +51,7 @@ class GemmaNPUBackend(VLMBackend):
         og = self.og
         max_new = max_new_tokens or self.gen_params.get("max_new_tokens", 64)
 
-        # OGA Images.open รับ path → เซฟ PIL image ลง temp file ชั่วคราว
+        # OGA 的 Images.open 只吃路徑 → 先把 PIL 影像存成暫存檔
         tmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
         tmp_path = tmp.name
         tmp.close()
@@ -63,7 +63,7 @@ class GemmaNPUBackend(VLMBackend):
             params = og.GeneratorParams(self.model)
             params.set_search_options(do_sample=False, max_length=16384)
             generator = og.Generator(self.model, params)
-            # ⚠️ prefill เกิดที่ set_inputs (ดู §5.6) ไม่ใช่ generate_next_token
+            # ⚠️ 預填發生在 set_inputs（見 §5.6），不是 generate_next_token
             generator.set_inputs(inputs)
 
             out = []

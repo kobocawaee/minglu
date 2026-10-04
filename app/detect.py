@@ -1,16 +1,16 @@
 """
-detect.py — object detector (YOLOv8n) สำหรับ street mode hybrid
+detect.py — 物件偵測（YOLOv8n），供過馬路模式的混合式流程使用
 ================================================================
-ทำไมมี: VLM จิ๋วเดา "รถจอด/วิ่ง" ไม่ได้ (finding §5.5.2/5.5.1) และหลอนรถบนถนนว่าง.
-detector เฉพาะทางหา "รถ/คน" เป็นกล่องพิกัดได้แม่นกว่ามาก → เอาพิกัดไปคำนวณกฎเชิง
-ตำแหน่ง (app/crossing.py) แบบ deterministic. นี่คือ "hybrid pipeline" ที่เล่มเราชู
-(VLM=บริบท/สีไฟ, detector=รถในเส้นทาง).
+為什麼需要：小型 VLM 分不出「車是停著還是在開」（§5.5.2／5.5.1），還會在空的路上幻想出車。
+專門的偵測模型能準確框出「車／人」的位置 → 再用位置做規則判斷
+（app/crossing.py），結果可預期。這就是本研究主打的「混合式流程」
+（VLM＝情境／燈色，偵測模型＝路徑上的車）。
 
-offline: YOLOv8n weights (~6MB) ดาวน์โหลดครั้งเดียว แล้ว cache — inference ไม่ต่อเน็ต.
-fail-open: ถ้าไม่มี ultralytics → คืน [] (แอปยังรันได้ ไม่พัง).
+離線：YOLOv8n 權重（約 6MB）只需下載一次並快取 — 推論時不需要網路。
+容錯：沒有安裝 ultralytics → 回傳 []（程式照常執行，不會當掉）。
 """
 
-# คลาสที่สนใจใน street mode (ชื่อตาม COCO ของ YOLO)
+# 過馬路模式關心的類別（名稱依 YOLO 的 COCO 類別）
 VEHICLE_CLASSES = {"car", "truck", "bus", "motorcycle", "bicycle"}
 PERSON_CLASS = "person"
 _RELEVANT = VEHICLE_CLASSES | {PERSON_CLASS}
@@ -28,10 +28,10 @@ def _model():
 
 def detect(image, conf: float = 0.35, classes=None):
     """
-    รัน detector บน PIL.Image. คืน (dets, (w, h)).
+    在 PIL.Image 上執行偵測。回傳 (dets, (w, h))。
     dets = list of {"cls": str, "conf": float, "box": (x1,y1,x2,y2)}.
-    classes: set ของชื่อคลาสที่เอา (default = รถ+คน), "all" = ทุกคลาส COCO (ใช้โดย router).
-    ถ้าไม่มี ultralytics → ([], size) (fail-open).
+    classes：要保留的類別名稱集合（預設 = 車＋人），"all" = 所有 COCO 類別（router 使用）。
+    沒有 ultralytics → ([], size)（容錯）。
     """
     w, h = image.size
     try:

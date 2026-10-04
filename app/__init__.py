@@ -1,1 +1,1 @@
-"""Phase 2 — Offline Visual Assistant สำหรับผู้พิการทางสายตา"""
+"""Phase 2 — 給視障者使用的離線視覺助理"""

@@ -1,20 +1,20 @@
 """
-server.py — เซิร์ฟเวอร์ offline ให้มือถือใช้แอปผ่าน browser
+server.py — 離線伺服器，讓手機透過瀏覽器使用
 ==========================================================
-สถาปัตยกรรม "ทาง A": โน้ตบุ๊ก = สมอง (NPU/iGPU infer), มือถือ = ตา+ลำโพง
-เชื่อมผ่าน WiFi/hotspot วงเดียวกัน — **ไม่ต้องมีอินเทอร์เน็ต = offline จริง**
+架構「方案 A」：筆電 = 大腦（負責推論），手機 = 眼睛＋喇叭
+透過同一個 Wi-Fi／熱點連線 — **不需要網際網路 = 真正離線**（資服版另支援 Tailscale 從外面連回）
 
-ใช้ Python stdlib เท่านั้น (http.server + ssl) — ไม่ต้องลง Flask/FastAPI
-cert: gen ด้วย openssl (มีใน PATH) ไม่ต้องลง cryptography
+只用 Python 內建模組（http.server + ssl）— 不需要安裝 Flask／FastAPI
+憑證：用 openssl 產生；沒有 openssl 時改用 cryptography 套件；Tailscale 開啟 HTTPS 時自動用正式憑證
 
-วิธีใช้ (แนะนำ --https เพื่อให้กล้องเปิดได้บนมือถือ):
+使用方式（建議加 --https，手機的相機才能開啟）：
     conda activate vlm_dml
     python -m app.server --device igpu --https
-  → บนมือถือเปิด https://<IP-โน้ตบุ๊ก>:8443
-    (กด "ดำเนินการต่อ/Advanced→Proceed" ผ่าน warning self-signed ครั้งเดียว)
+  → 手機打開 https://<筆電 IP>:8443
+    （自簽憑證只需第一次按「顯示詳細資訊／繼續前往」略過警告）
 
-UX สำหรับผู้พิการทางสายตา: แตะที่ไหนก็ได้บนจอ = บรรยาย, สั่นยืนยัน,
-โหมดต่อเนื่อง (auto-repeat), พูดสถานะ+ผล, สั่นแรงเมื่อพบอันตราย
+為視障者設計的操作：點螢幕任何地方 = 描述、震動確認、
+連續模式（自動重複）、唸出狀態與結果、偵測到危險時強烈震動
 """
 
 import sys
@@ -42,8 +42,8 @@ from PIL import Image
 from app import config
 from app.assistant import build_backend
 
-BACKEND = None  # โหลดครั้งเดียวตอน start
-SAVE_DIR = None  # ถ้าตั้ง = เซฟเฟรม+output ไว้ debug
+BACKEND = None  # 啟動時載入一次
+SAVE_DIR = None  # 有設定時 = 把畫面和輸出存下來除錯用
 _SEQ = 0
 GPU_LOCK = threading.Lock()   # [資服版] 描述和語音提問不要同時用顯示卡
 _STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
@@ -76,7 +76,7 @@ PAGE = """<!doctype html>
   #shade { position:fixed; inset:0; z-index:1; pointer-events:none;
            background:linear-gradient(to bottom, rgba(0,0,0,.55) 0, rgba(0,0,0,0) 22%,
                                       rgba(0,0,0,0) 55%, rgba(0,0,0,.6) 100%); }
-  /* แตะที่ไหนก็ได้ = บรรยาย (คนตาบอดไม่ต้องเล็งปุ่ม) */
+  /* 點螢幕任何地方 = 描述（視障者不必對準按鈕） */
   #tap { position:fixed; inset:0; z-index:2; }
 
   #bar { position:fixed; top:0; left:0; right:0; z-index:5; pointer-events:none;
@@ -406,7 +406,7 @@ setInterval(ping, 10000);
 async function keepAwake(){ try{ wakeLock=await navigator.wakeLock.request('screen'); }catch(e){} }
 function vibrate(p){ if(!SET.vib) return; try{ navigator.vibrate&&navigator.vibrate(p); }catch(e){} }
 
-// เลือกเสียงตามภาษา — อังกฤษชัดๆ + จีน (OCR อ่านป้ายจีนได้ ต้องพูดจีนได้ด้วย ไม่ให้เสียงเพี้ยน)
+// 依語言挑語音 — 清楚的英文＋中文（OCR 讀得到中文招牌，所以也要能唸中文，不能走音）
 let VOICE=null, VOICE_ZH=null;
 function pickVoice(){
   const all=speechSynthesis.getVoices();
@@ -414,15 +414,15 @@ function pickVoice(){
   const pref=['Samantha','Aria','Jenny','Google US English','Microsoft Zira','Daniel','Karen','en-US'];
   for(const p of pref){ const m=vs.find(v=>v.name&&v.name.includes(p)); if(m){VOICE=m;break;} }
   if(!VOICE) VOICE=vs.find(v=>v.lang&&v.lang.toLowerCase()==='en-us')||vs[0]||null;
-  // เสียงจีน: ไต้หวันก่อน (zh-TW) → จีนกลางอื่นๆ
+  // 中文語音：優先臺灣（zh-TW）→ 其他中文
   const zh=all.filter(v=>v.lang&&v.lang.toLowerCase().startsWith('zh'));
   VOICE_ZH=zh.find(v=>/tw|hant/i.test(v.lang))||zh.find(v=>!/cn|hans/i.test(v.lang))||zh[0]||null;
 }
 if('speechSynthesis' in window){ speechSynthesis.onvoiceschanged=pickVoice; pickVoice(); }
 const CJK=/[\\u3400-\\u9fff\\uf900-\\ufaff]/;
 const HAS_DIGIT_OR_CJK=/[\\u3400-\\u9fff\\uf900-\\ufaff0-9]/;
-// EN run = ต้องมี "คำละติน" จริงเท่านั้น — เครื่องหมาย /（）: และตัวเลขเกาะไปกับจีน
-// (ไม่งั้นวันที่/สแลชในประโยคจีนโดนหั่นสลับสำเนียง EN ไปมา — feedback เทสต์จริง)
+// 英文片段 = 必須是真正的「拉丁字詞」— 符號 /（）: 和數字跟著中文一起唸
+// （否則中文句子裡的日期／斜線會被切開，英文口音來回切換 — 實測回饋）
 const LATIN_RUN=/[A-Za-z][A-Za-z' -]*[A-Za-z]|[A-Za-z]/g;
 function utter(t, zh){ const u=new SpeechSynthesisUtterance(t);
   if(zh){ u.lang='zh-TW'; if(VOICE_ZH){ u.voice=VOICE_ZH; u.lang=VOICE_ZH.lang; } }
@@ -432,7 +432,7 @@ function speak(t){ try{
     speechSynthesis.cancel();
     const s=String(t);
     if(!CJK.test(s)){ if(s.trim()) utter(s.trim(), false); return; }
-    // มีจีนในประโยค: สลับไป EN เฉพาะช่วงที่เป็นคำละตินจริง ที่เหลือ (รวมตัวเลข/เครื่องหมาย) = จีน
+    // 句子裡有中文：只有真正的拉丁字詞才切到英文，其餘（含數字／符號）= 中文
     let last=0, m;
     LATIN_RUN.lastIndex=0;
     while((m=LATIN_RUN.exec(s))!==null){
@@ -445,7 +445,7 @@ function speak(t){ try{
     if(tail && HAS_DIGIT_OR_CJK.test(tail)) utter(tail, true);
   }catch(e){} }
 
-// คำที่บ่งอันตราย → สั่นแรง (haptic เตือนแม้ยังไม่ทันฟังเสียงจบ)
+// 表示危險的字詞 → 強烈震動（還沒聽完語音前就先提醒）
 const DANGER=/not safe|unsafe|danger|moving|wait|caution|careful|stop\\b|do not|注意|請等待|請不要|危險|紅燈|有人在你前方/i;
 
 function grabFrame(){
@@ -464,9 +464,9 @@ async function describe(){
   if(busy||asking||rec) return;
   const img=grabFrame();
   if(!img){ show('相機還沒準備好，請稍等', {hint:true});
-    speak('相機還沒準備好'); vibrate([400]); return; }  // กันส่งภาพดำ
+    speak('相機還沒準備好'); vibrate([400]); return; }  // 避免送出全黑的畫面
   busy=true;
-  vibrate(60);                      // ยืนยันว่าแตะติด
+  vibrate(60);                      // 確認有點到
   card.classList.add('busy');
   tag.textContent=modeName(MODE);
   setHeard('');
@@ -480,7 +480,7 @@ async function describe(){
     const m=shown.match(/^(\\S{1,6}模式)。\\s*/);
     if(m){ tag.textContent=m[1]; shown=shown.slice(m[0].length); }
     show(shown, {danger:danger, time:j.seconds+' 秒'});
-    vibrate(danger?[300,120,300,120,300]:[90]);  // อันตราย=สั่นรัว
+    vibrate(danger?[300,120,300,120,300]:[90]);  // 危險 = 連續震動
     lastText=j.text;
     speak(j.text);
   }catch(e){ fail(e); }
@@ -660,7 +660,7 @@ contChk.addEventListener('change', ()=>{
   speak(contChk.checked?'連續模式已開啟':'連續模式已關閉');
   if(contChk.checked) describe();
 });
-// กันจอดับกลับมาแล้ว re-acquire wake lock
+// 螢幕關閉再回來時，重新取得螢幕常亮鎖
 document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='visible') keepAwake(); });
 </script>
 </body>
@@ -707,7 +707,7 @@ class Handler(BaseHTTPRequestHandler):
 
             global _SEQ
             t0 = time.perf_counter()
-            from app import pipeline          # logic ทุกโหมดรวมที่เดียว (OCR/street hybrid/auto)
+            from app import pipeline          # 所有模式的邏輯集中在這裡（OCR／過馬路混合流程／自動）
             with GPU_LOCK:
                 text, _mode_used = pipeline.describe(BACKEND, image, mode)
             dt = round(time.perf_counter() - t0, 1)
@@ -799,7 +799,7 @@ def _decode_image(data_url):
 
 
 def _quality_gate(image, mode):
-    """frame-quality gate: เฟรมเบลอ/มืด → ไม่ infer. 擋下時回傳要唸的提示，通過回傳 None。"""
+    """畫面品質檢查：畫面模糊或太暗 → 不推論。擋下時回傳要唸的提示，通過回傳 None。"""
     if not config.QUALITY_GATE:
         return None
     from app import quality
@@ -823,7 +823,7 @@ def _quality_gate(image, mode):
 
 
 def get_lan_ip():
-    """หา IP ของ interface ที่ใช้ออกเน็ต (ทำงาน offline ได้ — UDP connect ไม่ส่ง packet)"""
+    """找出連外網路介面的 IP（離線也能用 — UDP connect 不會真的送出封包）"""
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
         s.connect(("10.255.255.255", 1))
@@ -929,7 +929,7 @@ def _make_cert_python(cert, key, ip):
 
 
 def ensure_cert(certdir, ip):
-    """สร้าง self-signed cert ด้วย openssl ถ้ายังไม่มี (ใส่ IP เป็น SAN)"""
+    """還沒有憑證時，用 openssl 產生自簽憑證（把 IP 放進 SAN）"""
     os.makedirs(certdir, exist_ok=True)
     cert = os.path.join(certdir, "cert.pem")
     key = os.path.join(certdir, "key.pem")
@@ -958,12 +958,12 @@ def main():
     ap.add_argument("--host", default="0.0.0.0")
     ap.add_argument("--port", type=int, default=0, help="default 8000 (http) / 8443 (https)")
     ap.add_argument("--https", action="store_true",
-                    help="เปิด TLS (self-signed) เพื่อให้กล้องเปิดได้บนมือถือ")
+                    help="開啟 TLS（自簽憑證），手機的相機才能開啟")
     ap.add_argument("--certdir", default="certs")
     ap.add_argument("--save-frames", default=None,
                     help="把每張畫面和系統說的話存到這個資料夾（例如 results/field_1004）")
     ap.add_argument("--no-quality-gate", action="store_true",
-                    help="ปิด frame-quality gate (เบลอ/มืด) — ไว้ demo/test")
+                    help="關閉畫面品質檢查（模糊／太暗）— 展示或測試用")
     args = ap.parse_args()
     port = args.port or (8443 if args.https else 8000)
 
