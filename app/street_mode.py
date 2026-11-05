@@ -12,13 +12,14 @@ street_mode.py — 過馬路模式的混合式流程（結果完全可預期）
 （較不準 — 見 §5.5.1）／YOLO 不能用時 → 有多少說多少（每一層都容錯）
 """
 
-from app import config, postprocess, crossing, detect, light_classifier
+from app import config, postprocess, crossing, detect, light_classifier, ped_detector
 
 # 過馬路模式只跑一次 YOLO，用到的類別：車（位置規則）＋人＋號誌（燈號關卡）
 _STREET_CLASSES = detect.VEHICLE_CLASSES | {detect.PERSON_CLASS, "traffic light"}
 
 # 跨畫面的燈號記憶（每個程序一位使用者 — 電腦版和伺服器都只服務一個人）
 _LIGHT_HISTORY = light_classifier.LightHistory()
+_PED_HISTORY = ped_detector.PedHistory()   # [資服版] 臺灣號誌模型的跨畫面投票
 
 # 夜間防護（rev. 07-21，四個路口＋夜市實地測試後）：
 # 夜間 LYTNet 信心 1.00 卻兩個方向都會錯 — 被彩色招牌／路燈誤導
@@ -71,10 +72,9 @@ def describe(backend, image):
 
     # [資服版] 白天先用臺灣行人號誌偵測模型；沒偵測到才交回下面原本的 LYTNet 流程
     #   （訓練資料都是白天，夜間不用它）
-    from app import ped_detector
     light = None
     if ped_detector.available() and not _is_night(image):
-        light = ped_detector.phrase(image)
+        light = ped_detector.phrase(image, history=_PED_HISTORY)
 
     # 管道 1：燈號 — LYTNet（沒有權重檔時改問 VLM）
     if light is not None:

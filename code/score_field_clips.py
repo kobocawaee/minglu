@@ -64,6 +64,7 @@ def score(night_level):
         fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
         step = max(1, int(round(fps)))
         street_mode._LIGHT_HISTORY = lc.LightHistory()      # fresh memory per clip
+        street_mode._PED_HISTORY = street_mode.ped_detector.PedHistory()
         i = 0
         while True:
             ok, frame = cap.read()
